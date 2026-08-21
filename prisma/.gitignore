@@ -1,0 +1,8 @@
+# SQLite / Dev local databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# Environment variables
+.env

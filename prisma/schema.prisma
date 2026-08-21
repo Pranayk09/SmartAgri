@@ -1,0 +1,381 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 1. ORGANIZATION & SECURITY MODULE
+// ==========================================
+
+model Organization {
+  id         String   @id @default(uuid())
+  name       String
+  code       String   @unique
+  status     String   @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  users             User[]
+  categories        ProductCategory[]
+  products          Product[]
+  batches           ProductBatch[]
+  stockMovements    StockMovement[]
+  customers         Customer[]
+  customerCredits   CustomerCredit[]
+  priceRules        PriceRule[]
+  salesOrders       SalesOrder[]
+  batchAllocations  BatchAllocation[]
+  invoices          Invoice[]
+  payments          Payment[]
+  auditLogs         AuditLog[]
+
+  @@map("organizations")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // OWNER, ADMIN, WAREHOUSE_MANAGER, SALES_MANAGER, SALES_EXECUTIVE, FINANCE_MANAGER
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique // e.g. dashboard.view, sales.create, inventory.adjust
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id")
+  permissionId String     @map("permission_id")
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  name           String
+  email          String       @unique
+  passwordHash   String       @map("password_hash")
+  roleId         String       @map("role_id")
+  status         String       @default("ACTIVE") // ACTIVE, INACTIVE, SUSPENDED
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  role           Role         @relation(fields: [roleId], references: [id])
+
+  stockMovements StockMovement[]
+  salesOrders    SalesOrder[]    @relation("OrderCreatedBy")
+  payments       Payment[]       @relation("PaymentCreatedBy")
+  auditLogs      AuditLog[]
+
+  @@map("users")
+}
+
+// ==========================================
+// 2. PRODUCT & BATCH MODULE
+// ==========================================
+
+model ProductCategory {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  name           String
+  description    String?
+  status         String       @default("ACTIVE")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  products       Product[]
+
+  @@unique([organizationId, name])
+  @@map("product_categories")
+}
+
+model Product {
+  id                  String          @id @default(uuid())
+  organizationId      String          @map("organization_id")
+  categoryId          String          @map("category_id")
+  name                String
+  sku                 String
+  unit                String          @default("KG") // KG, LITER, BAG, TON
+  defaultSellingPrice Float           @map("default_selling_price")
+  minimumStock        Float           @default(0) @map("minimum_stock")
+  status              String          @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  organization        Organization    @relation(fields: [organizationId], references: [id])
+  category            ProductCategory @relation(fields: [categoryId], references: [id])
+
+  batches             ProductBatch[]
+  stockMovements      StockMovement[]
+  priceRules          PriceRule[]
+  salesOrderItems     SalesOrderItem[]
+
+  @@unique([organizationId, sku])
+  @@map("products")
+}
+
+model ProductBatch {
+  id                String       @id @default(uuid())
+  organizationId    String       @map("organization_id")
+  productId         String       @map("product_id")
+  batchNumber       String       @map("batch_number")
+  manufacturingDate DateTime     @map("manufacturing_date")
+  expiryDate        DateTime     @map("expiry_date")
+  initialQuantity   Float        @map("initial_quantity")
+  availableQuantity Float        @map("available_quantity")
+  reservedQuantity  Float        @default(0) @map("reserved_quantity")
+  status            String       @default("AVAILABLE") // AVAILABLE, EXPIRING_SOON, EXPIRED, BLOCKED, DEPLETED
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  product           Product      @relation(fields: [productId], references: [id])
+
+  stockMovements    StockMovement[]
+  batchAllocations  BatchAllocation[]
+
+  @@unique([organizationId, productId, batchNumber])
+  @@map("product_batches")
+}
+
+// ==========================================
+// 3. INVENTORY & STOCK MOVEMENT MODULE
+// ==========================================
+
+model StockMovement {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  productId      String       @map("product_id")
+  batchId        String       @map("batch_id")
+  type           String       // STOCK_IN, RESERVATION, RELEASE, DISPATCH, ADJUSTMENT_IN, ADJUSTMENT_OUT
+  quantity       Float
+  referenceType  String?      @map("reference_type") // SALES_ORDER, MANUAL_ADJUSTMENT, INVENTORY_INITIAL
+  referenceId    String?      @map("reference_id")
+  reason         String?
+  createdBy      String?      @map("created_by")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  product        Product      @relation(fields: [productId], references: [id])
+  batch          ProductBatch @relation(fields: [batchId], references: [id])
+  user           User?        @relation(fields: [createdBy], references: [id])
+
+  @@map("stock_movements")
+}
+
+// ==========================================
+// 4. CUSTOMER & CREDIT MODULE
+// ==========================================
+
+model Customer {
+  id             String          @id @default(uuid())
+  organizationId String          @map("organization_id")
+  name           String
+  type           String          @default("DISTRIBUTOR") // DISTRIBUTOR, DEALER, RETAILER
+  phone          String?
+  email          String?
+  address        String?
+  status         String          @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  credit         CustomerCredit?
+  salesOrders    SalesOrder[]
+  invoices       Invoice[]
+  payments       Payment[]
+
+  @@map("customers")
+}
+
+model CustomerCredit {
+  id                String       @id @default(uuid())
+  organizationId    String       @map("organization_id")
+  customerId        String       @unique @map("customer_id")
+  creditLimit       Float        @map("credit_limit")
+  outstandingAmount Float        @default(0) @map("outstanding_amount")
+  paymentTermsDays  Int          @default(30) @map("payment_terms_days")
+  status            String       @default("ACTIVE") // ACTIVE, SUSPENDED, OVER_LIMIT
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  customer          Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("customer_credits")
+}
+
+// ==========================================
+// 5. BULK PRICING MODULE
+// ==========================================
+
+model PriceRule {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  productId      String       @map("product_id")
+  minQuantity    Float        @map("min_quantity")
+  maxQuantity    Float?       @map("max_quantity")
+  pricePerUnit   Float        @map("price_per_unit")
+  status         String       @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  product        Product      @relation(fields: [productId], references: [id])
+
+  @@map("price_rules")
+}
+
+// ==========================================
+// 6. SALES ORDER & ALLOCATION MODULE
+// ==========================================
+
+model SalesOrder {
+  id               String            @id @default(uuid())
+  organizationId   String            @map("organization_id")
+  customerId       String            @map("customer_id")
+  orderNumber      String            @map("order_number")
+  orderDate        DateTime          @default(now()) @map("order_date")
+  totalAmount      Float             @map("total_amount")
+  paymentTermsDays Int               @default(30) @map("payment_terms_days")
+  status           String            @default("DRAFT") // DRAFT, CONFIRMED, DISPATCHED, INVOICED, PAID, CANCELLED
+  createdBy        String            @map("created_by")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  customer         Customer          @relation(fields: [customerId], references: [id])
+  user             User              @relation("OrderCreatedBy", fields: [createdBy], references: [id])
+
+  items            SalesOrderItem[]
+  invoices         Invoice[]
+
+  @@unique([organizationId, orderNumber])
+  @@map("sales_orders")
+}
+
+model SalesOrderItem {
+  id           String            @id @default(uuid())
+  salesOrderId String            @map("sales_order_id")
+  productId    String            @map("product_id")
+  quantity     Float
+  unitPrice    Float             @map("unit_price")
+  subtotal     Float
+
+  salesOrder   SalesOrder        @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product      Product           @relation(fields: [productId], references: [id])
+  allocations  BatchAllocation[]
+
+  @@map("sales_order_items")
+}
+
+model BatchAllocation {
+  id               String         @id @default(uuid())
+  organizationId   String         @map("organization_id")
+  salesOrderItemId String         @map("sales_order_item_id")
+  batchId          String         @map("batch_id")
+  quantity         Float
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  organization     Organization   @relation(fields: [organizationId], references: [id])
+  salesOrderItem   SalesOrderItem @relation(fields: [salesOrderItemId], references: [id], onDelete: Cascade)
+  batch            ProductBatch   @relation(fields: [batchId], references: [id])
+
+  @@map("batch_allocations")
+}
+
+// ==========================================
+// 7. INVOICING & PAYMENT MODULE
+// ==========================================
+
+model Invoice {
+  id                String       @id @default(uuid())
+  organizationId    String       @map("organization_id")
+  customerId        String       @map("customer_id")
+  salesOrderId      String       @map("sales_order_id")
+  invoiceNumber     String       @map("invoice_number")
+  invoiceDate       DateTime     @default(now()) @map("invoice_date")
+  subtotal          Float
+  discount          Float        @default(0)
+  totalAmount       Float        @map("total_amount")
+  amountPaid        Float        @default(0) @map("amount_paid")
+  outstandingAmount Float        @map("outstanding_amount")
+  paymentTermsDays  Int          @default(30) @map("payment_terms_days")
+  dueDate           DateTime     @map("due_date")
+  status            String       @default("PENDING") // PENDING, PARTIALLY_PAID, PAID, OVERDUE, CANCELLED
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  customer          Customer     @relation(fields: [customerId], references: [id])
+  salesOrder        SalesOrder   @relation(fields: [salesOrderId], references: [id])
+
+  payments          Payment[]
+
+  @@unique([organizationId, invoiceNumber])
+  @@map("invoices")
+}
+
+model Payment {
+  id              String       @id @default(uuid())
+  organizationId  String       @map("organization_id")
+  invoiceId       String       @map("invoice_id")
+  customerId      String       @map("customer_id")
+  amount          Float
+  paymentDate     DateTime     @default(now()) @map("payment_date")
+  paymentMethod   String       @default("BANK_TRANSFER") // BANK_TRANSFER, CASH, CHEQUE, UPI, OTHER
+  referenceNumber String?      @map("reference_number")
+  notes           String?
+  createdBy       String       @map("created_by")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  invoice         Invoice      @relation(fields: [invoiceId], references: [id])
+  customer        Customer     @relation(fields: [customerId], references: [id])
+  user            User         @relation("PaymentCreatedBy", fields: [createdBy], references: [id])
+
+  @@map("payments")
+}
+
+// ==========================================
+// 8. AUDIT LOG MODULE
+// ==========================================
+
+model AuditLog {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  userId         String?      @map("user_id")
+  action         String       // e.g., ORDER_CONFIRMED, STOCK_DISPATCHED, PAYMENT_RECORDED
+  entityType     String       @map("entity_type") // SalesOrder, ProductBatch, Invoice
+  entityId       String       @map("entity_id")
+  metadata       Json?
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User?        @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
