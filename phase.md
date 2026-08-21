@@ -1,8 +1,8 @@
 # SmartAgri ERP - Phase Tracking & Status
 
 ## Current Phase: Phase 2 - Auth & Organization RBAC
-**Status:** READY_TO_START
-**Developer Session:** 1
+**Status:** IN_PROGRESS
+**Developer Session:** 2
 
 ---
 
@@ -44,3 +44,22 @@
 2. Database schema validates cleanly via `npx prisma validate`.
 3. Frontend Vite dev server boots up cleanly on designated port (e.g., 3000 / 5173).
 4. Both servers run concurrently and respond to initial requests.
+
+---
+
+## Phase 2 Active Tasks
+- [ ] Seed database with default roles, permissions, and initial organization.
+- [ ] Implement Organization validation and tenant parsing middleware.
+- [ ] Build auth services: User registration, login with `bcryptjs` hashing, JWT token signature.
+- [ ] Develop authentication endpoints: `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`.
+- [ ] Implement backend RBAC middleware (`authenticateToken`, `requirePermission`).
+- [ ] Create React frontend AuthContext, custom hooks, and login form.
+- [ ] Protect frontend application routes and toggle menu items using RBAC roles.
+
+---
+
+## Phase 2 Checkpoint Requirements
+1. PostgreSQL database successfully seeded with roles (`OWNER`, `ADMIN`, etc.) and permissions.
+2. Authenticated user endpoints return correct JWT credentials.
+3. Accessing protected backend APIs without a valid token returns a `401 Unauthorized` or `403 Forbidden` response.
+4. User logs in successfully from frontend and context updates accordingly.
