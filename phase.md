@@ -1,8 +1,8 @@
 # SmartAgri ERP - Phase Tracking & Status
 
-## Current Phase: Phase 4 - Product & Category Management
-**Status:** IN_PROGRESS
-**Developer Session:** 2
+## Current Phase: Phase 6 - Expiry Rules & FEFO Engine
+**Status:** NOT_STARTED
+**Developer Session:** 4
 
 ---
 
@@ -13,8 +13,8 @@
 | **Phase 1** | Foundation & Project Setup | Days 1–2 | 🟢 COMPLETED | ✅ Passed |
 | **Phase 2** | Auth & Organization RBAC | Days 2–3 | 🟢 COMPLETED | ✅ Passed |
 | **Phase 3** | Application Shell & UI Layout | Day 3 | 🟢 COMPLETED | ✅ Passed |
-| **Phase 4** | Product & Category Management | Day 4 | 🟡 IN_PROGRESS | ❌ Pending |
-| **Phase 5** | Batches & Inventory Tracking | Day 5 | ⚪ NOT_STARTED | ❌ Pending |
+| **Phase 4** | Product & Category Management | Day 4 | 🟢 COMPLETED | ✅ Passed |
+| **Phase 5** | Batches & Inventory Tracking | Day 5 | 🟢 COMPLETED | ✅ Passed |
 | **Phase 6** | Expiry Rules & FEFO Engine | Day 6 | ⚪ NOT_STARTED | ❌ Pending |
 | **Phase 7** | Customers & Credit Limit | Day 7 | ⚪ NOT_STARTED | ❌ Pending |
 | **Phase 8** | Tiered Bulk Pricing Service | Day 8 | ⚪ NOT_STARTED | ❌ Pending |
@@ -23,7 +23,7 @@
 | **Phase 11**| Invoice & Payment Finance Loop| Day 12 | ⚪ NOT_STARTED | ❌ Pending |
 | **Phase 12**| Dashboard KPIs & Reports | Day 13 | ⚪ NOT_STARTED | ❌ Pending |
 | **Phase 13**| End-to-End Hardening & Testing| Day 14 | ⚪ NOT_STARTED | ❌ Pending |
-| **Phase 14**| Seed Data & Demo Polish | Day 15 | ⚪ NOT_STARTED | ❌ Pending |
+| **Phase 14**| Seed Data & Polish | Day 15 | ⚪ NOT_STARTED | ❌ Pending |
 
 ---
 
@@ -80,3 +80,41 @@
 2. Clicking sidebar tabs updates window location hash and swaps views smoothly.
 3. System triggers success, warning, info, and error toasts with visible micro-animations.
 4. Accessing unassigned routes manually blocks rendering and displays an Access Denied card.
+
+---
+
+## Phase 4 Active Tasks
+- [x] Implement database models for listing, adding, and updating product categories and products.
+- [x] Implement Product Category and Products CRUD controllers and backend routes with tenant isolation.
+- [x] Protect routes using RBAC security permission middlewares.
+- [x] Refactor frontend `ProductsView.jsx` to render tables dynamically and handle modal-driven CRUD forms.
+- [x] Prevent deletion of categories or products when child rows (products, batches, sales order items) exist.
+- [x] Verify API responses, permissions, and database constraints in the browser application.
+
+---
+
+## Phase 4 Checkpoint Requirements
+1. Category and Product entries successfully propagate from/to PostgreSQL database.
+2. Only authorized roles (e.g. OWNER, ADMIN) can create, update, or delete products and categories.
+3. Database constraint checks prevent deletion of referenced entities and return clear user-facing error toasts.
+4. Product SKU values are verified unique per organization at the service validation layer.
+
+---
+
+## Phase 5 Active Tasks
+- [x] Create backend services in `inventoryService.js` for batch lots and adjustment transactions.
+- [x] Add Prisma transactions to log immutable `StockMovement` operations atomically.
+- [x] Develop endpoint routes in `inventoryRoutes.js` protected by RBAC permissions.
+- [x] Refactor frontend `InventoryView.jsx` to show database-backed lots, support CRUD creation, and adjust stock manual edits.
+- [x] Design a secondary sub-tab for the Stock Movement Ledger to audit audit trails.
+- [x] Verify API transaction responses, overdraft constraints, and ledger histories in the browser.
+
+---
+
+## Phase 5 Checkpoint Requirements
+1. Batches and Stock Movements are saved in the PostgreSQL database with proper organization isolation.
+2. Initial stock entries automatically create a corresponding `STOCK_IN` movement.
+3. Decrementing stock validation checks prevent the available inventory from going below zero.
+4. Users who adjust stock are captured and linked to the resulting `StockMovement` logs.
+
+

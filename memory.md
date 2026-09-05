@@ -51,9 +51,37 @@
   - Created global [ToastContext.jsx](file:///c:/Users/Admin/Desktop/SmartAgri/frontend/src/context/ToastContext.jsx) notification portal and [ErrorBoundary.jsx](file:///c:/Users/Admin/Desktop/SmartAgri/frontend/src/components/ErrorBoundary.jsx) visual exception handler.
   - Verified backend endpoints, frontend layout routing, toast notification alerts, FEFO lot allocations calculation, and order state confirmations interactively.
 - **Current State:**
-  - Phase 1, 2, & 3 Checkpoints: **PASSED**.
+  - Phase 1, 2, 3, 4 & 5 Checkpoints: **PASSED**.
   - Application console, database connectors, and security boundaries are fully operational.
-- **Next Developer Steps (Phase 4 - Product & Category Management):**
-  - Implement Product Category and Products CRUD controllers and backend routes.
-  - Connect database models for listing, adding, and updating product categories and products.
-  - Integrate frontend forms with backend endpoints.
+- **Next Developer Steps (Phase 6 - Expiry Rules & FEFO Engine):**
+  - Implement dynamic expiry calculations (EXPIRED, EXPIRING_SOON [30 days], NORMAL).
+  - Implement full FEFO (First Expire, First Out) allocation logic in `InventoryService` (or new allocation helper service).
+  - Develop backend allocation preview endpoint (`POST /api/sales/orders/check` FEFO component).
+  - Integrate FEFO test suite and validation scripts.
+
+### Session 3 Log (Phase 4 Completion)
+- **Developer / Agent:** Antigravity (Gemini 3.5 Flash)
+- **Timestamp:** 2026-08-27
+- **Summary of Actions:**
+  - Designed and executed the implementation plan for Phase 4: Product & Category Management.
+  - Implemented the product and category services layer in [productService.js](file:///c:/Users/Admin/Desktop/SmartAgri/backend/src/services/productService.js) handling database operations under organization tenant isolation, unique SKU validation, and cascade validation.
+  - Created controller handlers in [productController.js](file:///c:/Users/Admin/Desktop/SmartAgri/backend/src/controllers/productController.js) and routes mapping in [productRoutes.js](file:///c:/Users/Admin/Desktop/SmartAgri/backend/src/routes/productRoutes.js) protected by `authenticateToken` and `requirePermission` middlewares.
+  - Registered and mounted routes in [app.js](file:///c:/Users/Admin/Desktop/SmartAgri/backend/src/app.js).
+  - Refactored [ProductsView.jsx](file:///c:/Users/Admin/Desktop/SmartAgri/frontend/src/components/ProductsView.jsx) to fetch, create, edit, and delete category and product profiles dynamically using modal structures and customized permission validations.
+  - Completed end-to-end interactive verification of CRUD actions, error dialogs, delete constraint prevention, and UI alerts via a browser subagent session.
+
+### Session 4 Log (Phase 5 Completion)
+- **Developer / Agent:** Antigravity (Gemini 3.5 Flash)
+- **Timestamp:** 2026-08-27
+- **Summary of Actions:**
+  - Designed and executed the implementation plan for Phase 5: Batches & Inventory Tracking.
+  - Developed [inventoryService.js](file:///c:/Users/Admin/Desktop/SmartAgri/backend/src/services/inventoryService.js) to manage batch lots and logs inside transaction scopes (`prisma.$transaction`) with safety guards preventing negative stock.
+  - Implemented [inventoryController.js](file:///c:/Users/Admin/Desktop/SmartAgri/backend/src/controllers/inventoryController.js) and [inventoryRoutes.js](file:///c:/Users/Admin/Desktop/SmartAgri/backend/src/routes/inventoryRoutes.js) to support batch listings, initial entries, and manual stock adjustments.
+  - Mounted the inventory routes inside [app.js](file:///c:/Users/Admin/Desktop/SmartAgri/backend/src/app.js).
+  - Refactored frontend [InventoryView.jsx](file:///c:/Users/Admin/Desktop/SmartAgri/frontend/src/components/InventoryView.jsx) into a sub-tab layout:
+    - **Batch Quantities**: Shows current active/depleted lots and allows manual adjustments via modal forms.
+    - **Stock Movement Ledger**: Renders a complete, color-coded audit trail of all transactions.
+    - **FEFO Allocation Engine**: Plugs the client-side allocation tool into live batch state arrays.
+  - Verified batch creation, adjustment deductions, transaction safety guards, history ledgers, and FEFO allocation via a browser subagent session.
+
+

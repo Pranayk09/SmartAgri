@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes.js';
+import productRoutes from './routes/productRoutes.js';
+import inventoryRoutes from './routes/inventoryRoutes.js';
 
 dotenv.config();
 
@@ -23,6 +25,12 @@ app.use((req, res, next) => {
 
 // Auth Routes
 app.use('/api/auth', authRoutes);
+
+// Product & Category Routes
+app.use('/api', productRoutes);
+
+// Inventory & Batches Routes
+app.use('/api', inventoryRoutes);
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {
