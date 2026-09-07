@@ -7,6 +7,7 @@ import inventoryRoutes from './routes/inventoryRoutes.js';
 import customerRoutes from './routes/customerRoutes.js';
 import pricingRoutes from './routes/pricingRoutes.js';
 import salesOrderRoutes from './routes/salesOrderRoutes.js';
+import invoiceRoutes from './routes/invoiceRoutes.js';
 
 dotenv.config();
 
@@ -43,6 +44,9 @@ app.use('/api/pricing', pricingRoutes);
 
 // Sales Order Routes
 app.use('/api/sales', salesOrderRoutes);
+
+// Invoice & Payment Routes
+app.use('/api/invoices', invoiceRoutes);
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {

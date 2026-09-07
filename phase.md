@@ -19,8 +19,8 @@
 | **Phase 7** | Customers & Credit Limit | Day 7 | 🟢 COMPLETED | ✅ Passed |
 | **Phase 8** | Tiered Bulk Pricing Service | Day 8 | 🟢 COMPLETED | ✅ Passed |
 | **Phase 9** | Sales Order & Check Flow | Days 9–10 | 🟢 COMPLETED | ✅ Passed |
-| **Phase 10**| Reservation & Dispatch Flow | Day 11 | ⚪ NOT_STARTED | ❌ Pending |
-| **Phase 11**| Invoice & Payment Finance Loop| Day 12 | ⚪ NOT_STARTED | ❌ Pending |
+| **Phase 10**| Reservation & Dispatch Flow | Day 11 | 🟢 COMPLETED | ✅ Passed |
+| **Phase 11**| Invoice & Payment Finance Loop| Day 12 | 🟢 COMPLETED | ✅ Passed |
 | **Phase 12**| Dashboard KPIs & Reports | Day 13 | ⚪ NOT_STARTED | ❌ Pending |
 | **Phase 13**| End-to-End Hardening & Testing| Day 14 | ⚪ NOT_STARTED | ❌ Pending |
 | **Phase 14**| Seed Data & Polish | Day 15 | ⚪ NOT_STARTED | ❌ Pending |
@@ -192,3 +192,42 @@
 5. Frontend order check panel shows credit approval/rejection, per-line FEFO allocation with batch details, and applied pricing tier.
 6. `checkOrder` correctly short-circuits credit errors into the response (`canProceed: false`) without throwing to the client.
 
+---
+
+## Phase 10 Active Tasks
+- [x] Update `salesOrderService.js` to add `confirmOrder` (DRAFT -> CONFIRMED, allocates stock)
+- [x] Update `salesOrderService.js` to add `dispatchOrder` (CONFIRMED -> DISPATCHED, dispatches stock, updates credit)
+- [x] Update `salesOrderController.js` with `confirmOrder` and `dispatchOrder` handlers
+- [x] Update `salesOrderRoutes.js` with new routes (`/orders/:id/confirm`, `/orders/:id/dispatch`) before `/:id`
+- [x] Update `SalesOrdersView.jsx` with Confirm and Dispatch buttons (gated by RBAC permissions)
+- [x] Update `SalesOrdersView.jsx` order detail modal to show BatchAllocation panel
+- [x] Test end-to-end flow via browser subagent
+
+---
+
+## Phase 10 Checkpoint Requirements
+1. `POST /api/sales/orders/:id/confirm` on DRAFT order transitions status to `CONFIRMED`, creates `BatchAllocation` rows, and reserves stock.
+2. `POST /api/sales/orders/:id/dispatch` on CONFIRMED order transitions status to `DISPATCHED`, deducts reserved stock, and increments customer outstanding amount.
+3. Batch dispatch correctly marks batches as `DEPLETED` if available and reserved quantities hit 0.
+4. Frontend correctly gates actions behind `sales.confirm` and `sales.dispatch` permissions.
+5. Frontend Order Detail modal displays the reserved/dispatched batches correctly for non-DRAFT orders.
+
+---
+
+## Phase 11 Active Tasks
+- [x] Create `invoiceService.js` (getPendingDispatchOrders, createInvoice, listInvoices, recordPayment)
+- [x] Create `invoiceController.js` and `invoiceRoutes.js`
+- [x] Mount `/api/invoices` in `app.js`
+- [x] Rewrite `InvoicesView.jsx` layout and integrate API calls
+- [x] Connect "Generate Invoice" flow for dispatched orders
+- [x] Connect "Record Payment" flow to update invoice and customer credit
+- [x] Verify complete finance loop logic
+
+---
+
+## Phase 11 Checkpoint Requirements
+1. `GET /api/invoices/pending-orders` correctly returns only DISPATCHED sales orders.
+2. `POST /api/invoices` generates a unique `INV-YYYYMM-NNNN` number, creates the invoice, and updates order status to INVOICED.
+3. `POST /api/invoices/:id/payments` correctly decrements invoice `outstandingAmount`, increments `amountPaid`, and updates invoice status (PARTIALLY_PAID / PAID).
+4. Customer credit is restored: `CustomerCredit.outstandingAmount` is decremented by the exact payment amount.
+5. Frontend allows users with `invoices.payment` permission to record payments and users with `invoices.create` to generate invoices.

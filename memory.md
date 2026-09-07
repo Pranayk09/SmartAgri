@@ -188,4 +188,43 @@
   - Update `SalesOrdersView.jsx` to show workflow buttons (Confirm / Dispatch) based on order status.
   - Update `phase.md` and `memory.md` upon completion.
 
+---
 
+### Session 9 Log (Phase 10 Completion)
+- **Developer / Agent:** Antigravity (Gemini 3.5 Pro)
+- **Timestamp:** 2026-09-07
+- **Summary of Actions:**
+  - Added `confirmOrder()` to `salesOrderService.js`: Atomically validates stock via FEFO, creates `BatchAllocation` records, deducts `availableQuantity`, increments `reservedQuantity`, and generates `RESERVATION` stock movements. Order transitions to `CONFIRMED`.
+  - Added `dispatchOrder()` to `salesOrderService.js`: Atomically processes `BatchAllocation` rows, deducts `reservedQuantity`, sets batch status to `DEPLETED` if appropriate, creates `DISPATCH` stock movements, and increments `CustomerCredit.outstandingAmount`. Order transitions to `DISPATCHED`.
+  - Added controller handlers `confirmOrder` and `dispatchOrder` to `salesOrderController.js`.
+  - Mapped routes `POST /api/sales/orders/:id/confirm` and `POST /api/sales/orders/:id/dispatch` with correct RBAC gates in `salesOrderRoutes.js`.
+  - Updated `SalesOrdersView.jsx`: Added Confirm and Dispatch action buttons with confirmation dialogs. Enhanced `OrderDetailModal` to show the "Reserved / Dispatched Batches" table containing exact batch allocations for the order.
+  - Spawned browser subagent to execute full UI and backend flows, which succeeded with detailed checks of all states.
+- **Current State:**
+  - Phase 1–10 Checkpoints: **PASSED**.
+  - All core ERP reservation and inventory dispatch flows are operational.
+- **Next Developer Steps (Phase 11 - Invoice & Payment Finance Loop):**
+  - Implement Invoice generation from DISPATCHED orders.
+  - Create Payment flows to decrement `outstandingAmount` on CustomerCredit.
+  - Add routes, controllers, and UI views for Invoices and Payments.
+  - Update `phase.md` and `memory.md` upon completion.
+
+---
+
+### Session 10 Log (Phase 11 Completion)
+- **Developer / Agent:** Antigravity (Gemini 3.5 Pro)
+- **Timestamp:** 2026-09-08
+- **Summary of Actions:**
+  - Created `invoiceService.js`: Implemented `createInvoice()` which auto-generates invoice numbers, sums order totals, and marks orders as `INVOICED`. Implemented `recordPayment()` which applies payments against invoices and restores the customer's available credit by decrementing `CustomerCredit.outstandingAmount`. Both execute atomically via `prisma.$transaction`.
+  - Created `invoiceController.js` and `invoiceRoutes.js` exposing standard endpoints for fetching pending orders, creating invoices, listing invoices, and recording payments.
+  - Mounted `/api/invoices` router in `app.js`.
+  - Rewrote `InvoicesView.jsx`: Created a multi-tab view with KPIs (Total Outstanding, Total Collected, Pending Invoices), an Invoices Ledger table with dynamic payment status badges, and a "Dispatched Orders" tab for generating new invoices. Built modals for "Record Payment" with dynamic validations.
+  - Validated End-to-End flow: Invoice generation works cleanly, and recording payments immediately restates customer credit and shifts invoice statuses seamlessly from `PENDING` to `PARTIALLY_PAID` to `PAID`.
+- **Current State:**
+  - Phase 1–11 Checkpoints: **PASSED**.
+  - Order-to-Cash loop is fundamentally complete and credit logic is sound.
+- **Next Developer Steps (Phase 12 - Dashboard KPIs & Reports):**
+  - Implement overall business KPI cards (Sales Volume, Outstanding Collections, Fast-Moving Stock).
+  - Create visual charting and aggregated query endpoints.
+  - Revamp the `DashboardView.jsx` and `ReportsView.jsx`.
+  - Update `phase.md` and `memory.md` upon completion.
