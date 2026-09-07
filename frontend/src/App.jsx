@@ -8,6 +8,7 @@ import DashboardView from './components/DashboardView';
 import ProductsView from './components/ProductsView';
 import InventoryView from './components/InventoryView';
 import CustomersView from './components/CustomersView';
+import PricingView from './components/PricingView';
 import SalesOrdersView from './components/SalesOrdersView';
 import InvoicesView from './components/InvoicesView';
 import ReportsView from './components/ReportsView';
@@ -18,6 +19,7 @@ import {
   Package, 
   Boxes, 
   Users, 
+  Tag,
   ShoppingCart, 
   Receipt, 
   BarChart3, 
@@ -82,6 +84,7 @@ export default function App() {
     { id: 'products', label: 'Products', icon: <Package size={18} />, permission: 'products.view' },
     { id: 'inventory', label: 'Batch Inventory & FEFO', icon: <Boxes size={18} />, permission: 'inventory.view' },
     { id: 'customers', label: 'Customers & Credit', icon: <Users size={18} />, permission: 'customers.view' },
+    { id: 'pricing', label: 'Bulk Pricing Engine', icon: <Tag size={18} />, permission: 'products.view' },
     { id: 'sales', label: 'Sales Orders', icon: <ShoppingCart size={18} />, permission: 'sales.view' },
     { id: 'invoices', label: 'Invoices & Payments', icon: <Receipt size={18} />, permission: 'invoices.view' },
     { id: 'reports', label: 'Analytics & Reports', icon: <BarChart3 size={18} />, permission: 'dashboard.view' },
@@ -121,6 +124,8 @@ export default function App() {
         return <InventoryView />;
       case 'customers':
         return <CustomersView />;
+      case 'pricing':
+        return <PricingView />;
       case 'sales':
         return <SalesOrdersView />;
       case 'invoices':

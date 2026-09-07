@@ -236,3 +236,104 @@ export async function getStockMovements(organizationId) {
     orderBy: { createdAt: 'desc' },
   });
 }
+
+// ==========================================
+// 3. FEFO ALLOCATION ENGINE
+// ==========================================
+
+/**
+ * First Expire, First Out (FEFO) allocation algorithm.
+ * Non-mutating — returns a proposed allocation plan without any DB writes.
+ *
+ * @param {string} organizationId
+ * @param {string} productId
+ * @param {number} requestedQuantity
+ * @returns {{ canFulfill: boolean, allocations: Array, shortage: number, totalAvailable: number }}
+ */
+export async function allocateFEFO(organizationId, productId, requestedQuantity) {
+  // Validate product belongs to organization
+  const product = await prisma.product.findFirst({
+    where: { id: productId, organizationId },
+    select: { id: true, name: true, sku: true, unit: true },
+  });
+
+  if (!product) {
+    const error = new Error('Product not found or access denied.');
+    error.statusCode = 404;
+    error.code = 'NOT_FOUND';
+    throw error;
+  }
+
+  const parsedQty = parseFloat(requestedQuantity);
+  if (isNaN(parsedQty) || parsedQty <= 0) {
+    const error = new Error('Requested quantity must be a positive number.');
+    error.statusCode = 400;
+    error.code = 'VALIDATION_ERROR';
+    throw error;
+  }
+
+  // Fetch eligible batches: not expired, not blocked, not depleted, with available stock
+  const now = new Date();
+  const eligibleBatches = await prisma.productBatch.findMany({
+    where: {
+      organizationId,
+      productId,
+      status: {
+        notIn: ['BLOCKED', 'DEPLETED'],
+      },
+      expiryDate: {
+        gt: now, // Strictly exclude already-expired batches
+      },
+      availableQuantity: {
+        gt: 0,
+      },
+    },
+    orderBy: {
+      expiryDate: 'asc', // FEFO: earliest expiry first
+    },
+  });
+
+  const totalAvailable = eligibleBatches.reduce(
+    (sum, b) => sum + b.availableQuantity,
+    0
+  );
+
+  let remaining = parsedQty;
+  const allocations = [];
+
+  for (const batch of eligibleBatches) {
+    if (remaining <= 0) break;
+
+    const allocatedQty = Math.min(batch.availableQuantity, remaining);
+
+    // Calculate live expiry status
+    const diffMs = new Date(batch.expiryDate) - now;
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    const expiryStatus = diffDays <= 30 ? 'EXPIRING_SOON' : 'AVAILABLE';
+
+    allocations.push({
+      batchId: batch.id,
+      batchNumber: batch.batchNumber,
+      expiryDate: batch.expiryDate,
+      daysUntilExpiry: Math.floor(diffDays),
+      expiryStatus,
+      availableQuantity: batch.availableQuantity,
+      allocatedQuantity: allocatedQty,
+    });
+
+    remaining -= allocatedQty;
+  }
+
+  const shortage = remaining > 0 ? remaining : 0;
+  const canFulfill = shortage === 0;
+
+  return {
+    product,
+    requestedQuantity: parsedQty,
+    totalAvailable,
+    canFulfill,
+    shortage,
+    allocations,
+  };
+}
+

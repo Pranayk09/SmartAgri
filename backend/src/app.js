@@ -4,6 +4,9 @@ import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes.js';
 import productRoutes from './routes/productRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
+import customerRoutes from './routes/customerRoutes.js';
+import pricingRoutes from './routes/pricingRoutes.js';
+import salesOrderRoutes from './routes/salesOrderRoutes.js';
 
 dotenv.config();
 
@@ -31,6 +34,15 @@ app.use('/api', productRoutes);
 
 // Inventory & Batches Routes
 app.use('/api', inventoryRoutes);
+
+// Customer & Credit Routes
+app.use('/api', customerRoutes);
+
+// Bulk Pricing Engine Routes
+app.use('/api/pricing', pricingRoutes);
+
+// Sales Order Routes
+app.use('/api/sales', salesOrderRoutes);
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {

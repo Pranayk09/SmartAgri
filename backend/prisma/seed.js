@@ -37,7 +37,13 @@ const PERMISSIONS = [
   { name: 'invoices.payment', description: 'Record payments against customer invoices' },
   
   // Users & Access Control
-  { name: 'users.manage', description: 'Manage users, roles, and permissions within the organization' }
+  { name: 'users.manage', description: 'Manage users, roles, and permissions within the organization' },
+
+  // Bulk Pricing
+  { name: 'pricing.view',   description: 'View bulk pricing tiers and price rules' },
+  { name: 'pricing.create', description: 'Create new bulk pricing tier rules' },
+  { name: 'pricing.update', description: 'Update existing bulk pricing tier rules' },
+  { name: 'pricing.delete', description: 'Delete bulk pricing tier rules' }
 ];
 
 const ROLES = {
@@ -74,6 +80,7 @@ const ROLES = {
       'customers.view',
       'customers.create',
       'customers.update',
+      'pricing.view',
       'sales.create',
       'sales.view',
       'sales.confirm',
@@ -100,6 +107,10 @@ const ROLES = {
       'dashboard.view',
       'customers.view',
       'customers.credit',
+      'pricing.view',
+      'pricing.create',
+      'pricing.update',
+      'pricing.delete',
       'sales.view',
       'invoices.create',
       'invoices.view',
