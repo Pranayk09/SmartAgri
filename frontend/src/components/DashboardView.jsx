@@ -1,9 +1,43 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useToast } from '../context/ToastContext';
 import { TrendingUp, AlertTriangle, Users, Coins, Box, ShoppingBag, BellRing, Sparkles } from 'lucide-react';
+import { apiGet } from '../utils/api';
 
 export default function DashboardView() {
   const { showToast } = useToast();
+  
+  const [kpis, setKpis] = useState({
+    activeInventory: 0,
+    pendingSales: 0,
+    pendingOrdersCount: 0,
+    creditUtilization: 0,
+    activeDistributors: 0
+  });
+  
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    try {
+      const [kpiRes, alertsRes] = await Promise.all([
+        apiGet('/dashboard/kpis'),
+        apiGet('/dashboard/alerts')
+      ]);
+      setKpis(kpiRes.data || {});
+      setAlerts(alertsRes.data || []);
+      showToast('System stats reloaded and refreshed successfully!', 'success');
+    } catch (error) {
+      showToast('Failed to load dashboard data: ' + error.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const triggerToast = (type) => {
     switch (type) {
@@ -23,6 +57,14 @@ export default function DashboardView() {
     }
   };
 
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0
+    }).format(amount || 0);
+  };
+
   return (
     <div style={styles.container}>
       {/* Welcome Banner */}
@@ -33,8 +75,8 @@ export default function DashboardView() {
             SmartAgri Modular Monolith — Real-time tracking of manufacturing batches, credit limits, and FEFO dispatches.
           </p>
         </div>
-        <button onClick={() => triggerToast('success')} style={styles.bannerBtn}>
-          <Sparkles size={16} /> Sync Live Data
+        <button onClick={fetchDashboardData} style={styles.bannerBtn} disabled={loading}>
+          <Sparkles size={16} /> {loading ? 'Syncing...' : 'Sync Live Data'}
         </button>
       </div>
 
@@ -47,8 +89,8 @@ export default function DashboardView() {
               <Box size={20} color="#10b981" />
             </div>
           </div>
-          <p style={styles.kpiVal}>84,250 KG</p>
-          <span style={styles.kpiLabel}>Across 8 Warehouses</span>
+          <p style={styles.kpiVal}>{kpis.activeInventory.toLocaleString()} KG</p>
+          <span style={styles.kpiLabel}>Available across all batches</span>
         </div>
 
         <div className="card" style={styles.kpiCard}>
@@ -58,8 +100,8 @@ export default function DashboardView() {
               <ShoppingBag size={20} color="#3b82f6" />
             </div>
           </div>
-          <p style={styles.kpiVal}>₹12,45,800</p>
-          <span style={styles.kpiLabel}>14 Confirmed Orders</span>
+          <p style={styles.kpiVal}>{formatCurrency(kpis.pendingSales)}</p>
+          <span style={styles.kpiLabel}>{kpis.pendingOrdersCount} Confirmed Orders</span>
         </div>
 
         <div className="card" style={styles.kpiCard}>
@@ -69,7 +111,7 @@ export default function DashboardView() {
               <Coins size={20} color="#f59e0b" />
             </div>
           </div>
-          <p style={styles.kpiVal}>₹48,50,000</p>
+          <p style={styles.kpiVal}>{formatCurrency(kpis.creditUtilization)}</p>
           <span style={styles.kpiLabel}>Total Outstanding Balance</span>
         </div>
 
@@ -80,8 +122,8 @@ export default function DashboardView() {
               <Users size={20} color="#8b5cf6" />
             </div>
           </div>
-          <p style={styles.kpiVal}>42 Accounts</p>
-          <span style={styles.kpiLabel}>18 Premium Dealers</span>
+          <p style={styles.kpiVal}>{kpis.activeDistributors} Accounts</p>
+          <span style={styles.kpiLabel}>Verified Distributors</span>
         </div>
       </div>
 
@@ -91,20 +133,27 @@ export default function DashboardView() {
         <div className="card" style={styles.panelCard}>
           <h3 style={styles.panelTitle}>System Notifications & Reminders</h3>
           <div style={styles.alertsList}>
-            <div style={styles.alertItem}>
-              <AlertTriangle size={18} color="#f59e0b" style={{ flexShrink: 0 }} />
-              <div>
-                <p style={styles.alertText}><strong>Batch EXPIRY warning:</strong> Batch #NPK-2026-B12 (3,200 KG) expires in 12 days.</p>
-                <span style={styles.alertTime}>Warehouse-2 • 10m ago</span>
-              </div>
-            </div>
-            <div style={styles.alertItem}>
-              <TrendingUp size={18} color="#10b981" style={{ flexShrink: 0 }} />
-              <div>
-                <p style={styles.alertText}><strong>Limit Check:</strong> Distributor "Venkata Fertilizers" request approved (₹4,50,000 within credit limit).</p>
-                <span style={styles.alertTime}>Finance Service • 1h ago</span>
-              </div>
-            </div>
+            {loading ? (
+              <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Loading alerts...</p>
+            ) : alerts.length === 0 ? (
+              <p style={{ color: '#10b981', fontSize: '0.875rem' }}>All systems nominal. No alerts.</p>
+            ) : (
+              alerts.map(alert => (
+                <div key={alert.id} style={styles.alertItem}>
+                  {alert.type === 'error' ? (
+                    <TrendingUp size={18} color="#ef4444" style={{ flexShrink: 0 }} />
+                  ) : (
+                    <AlertTriangle size={18} color="#f59e0b" style={{ flexShrink: 0 }} />
+                  )}
+                  <div>
+                    <p style={styles.alertText}>
+                      <strong>{alert.title}:</strong> {alert.message}
+                    </p>
+                    <span style={styles.alertTime}>{alert.time}</span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 

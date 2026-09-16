@@ -1,19 +1,66 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useToast } from '../context/ToastContext';
 import { FileText, ArrowDownToLine, BarChart3, LineChart, PieChart, ShieldCheck } from 'lucide-react';
+import { apiGet } from '../utils/api';
 
 export default function ReportsView() {
   const { showToast } = useToast();
+  const [downloading, setDownloading] = useState(null);
 
-  const handleDownload = (reportName) => {
-    showToast(`Downloading ${reportName} in PDF/Excel format...`, 'success');
+  const convertToCSV = (arr) => {
+    if (!arr || !arr.length) return '';
+    const keys = Object.keys(arr[0]);
+    const header = keys.join(',');
+    const rows = arr.map(obj => 
+      keys.map(key => {
+        let val = obj[key] === null || obj[key] === undefined ? '' : obj[key];
+        // Escape quotes and wrap in quotes if there's a comma
+        if (typeof val === 'string' && (val.includes(',') || val.includes('"') || val.includes('\n'))) {
+          val = `"${val.replace(/"/g, '""')}"`;
+        }
+        return val;
+      }).join(',')
+    );
+    return [header, ...rows].join('\n');
+  };
+
+  const handleDownload = async (reportId, reportName, endpoint) => {
+    setDownloading(reportId);
+    showToast(`Generating ${reportName}...`, 'info');
+    
+    try {
+      const res = await apiGet(`/dashboard/reports/${endpoint}`);
+      if (!res.data || res.data.length === 0) {
+        showToast(`No data found for ${reportName}`, 'warning');
+        setDownloading(null);
+        return;
+      }
+      
+      const csv = convertToCSV(res.data);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${endpoint}_report_${new Date().getTime()}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      showToast(`${reportName} downloaded successfully.`, 'success');
+    } catch (error) {
+      showToast(`Failed to generate report: ${error.message}`, 'error');
+    } finally {
+      setDownloading(null);
+    }
   };
 
   const reports = [
-    { id: '1', title: 'Inventory Expiry Forecast (FEFO)', desc: 'Forecast of stock batches expiring within 30/60/90 days, enabling early sales discounting.', icon: <PieChart size={24} color="#10b981" /> },
-    { id: '2', title: 'Sales Volume & Pricing Report', desc: 'Analyzes quantity sold by product and checks volume-based price tier distributions.', icon: <BarChart3 size={24} color="#3b82f6" /> },
-    { id: '3', title: 'Credit Risk & Outstanding Balances', desc: 'Identifies distributors exceeding credit limits and displays aging accounts receivable.', icon: <LineChart size={24} color="#f59e0b" /> },
-    { id: '4', title: 'Collections & Revenue Reconciliation', desc: 'Ledger matching payments against generated invoices for cashflow health.', icon: <ShieldCheck size={24} color="#8b5cf6" /> }
+    { id: '1', endpoint: 'inventory-expiry', title: 'Inventory Expiry Forecast (FEFO)', desc: 'Forecast of stock batches expiring within 30/60/90 days, enabling early sales discounting.', icon: <PieChart size={24} color="#10b981" /> },
+    { id: '2', endpoint: 'sales-volume', title: 'Sales Volume & Pricing Report', desc: 'Analyzes quantity sold by product and checks volume-based price tier distributions.', icon: <BarChart3 size={24} color="#3b82f6" /> },
+    { id: '3', endpoint: 'credit-risk', title: 'Credit Risk & Outstanding Balances', desc: 'Identifies distributors exceeding credit limits and displays aging accounts receivable.', icon: <LineChart size={24} color="#f59e0b" /> },
+    { id: '4', endpoint: 'collections', title: 'Collections & Revenue Reconciliation', desc: 'Ledger matching payments against generated invoices for cashflow health.', icon: <ShieldCheck size={24} color="#8b5cf6" /> }
   ];
 
   return (
@@ -33,8 +80,13 @@ export default function ReportsView() {
               <h3 style={styles.cardTitle}>{r.title}</h3>
             </div>
             <p style={styles.cardDesc}>{r.desc}</p>
-            <button onClick={() => handleDownload(r.title)} style={styles.downloadBtn}>
-              <ArrowDownToLine size={16} /> Export Report Data
+            <button 
+              onClick={() => handleDownload(r.id, r.title, r.endpoint)} 
+              style={styles.downloadBtn}
+              disabled={downloading === r.id}
+            >
+              <ArrowDownToLine size={16} /> 
+              {downloading === r.id ? 'Generating...' : 'Export Report Data'}
             </button>
           </div>
         ))}
