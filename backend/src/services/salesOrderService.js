@@ -364,6 +364,19 @@ export async function confirmOrder(organizationId, orderId, userId) {
     throw err;
   }
 
+  // Guard: prevent double-allocation if confirmOrder is called concurrently
+  const existingAllocations = await prisma.batchAllocation.count({
+    where: {
+      salesOrderItem: { salesOrderId: orderId },
+    },
+  });
+  if (existingAllocations > 0) {
+    const err = new Error('Order has already been confirmed and stock allocated. Duplicate confirmation blocked.');
+    err.statusCode = 400;
+    err.code = 'DUPLICATE_OPERATION';
+    throw err;
+  }
+
   // Check FEFO for all items
   const allocationPlans = [];
   for (const item of order.items) {
@@ -384,23 +397,26 @@ export async function confirmOrder(organizationId, orderId, userId) {
   return prisma.$transaction(async (tx) => {
     for (const plan of allocationPlans) {
       for (const alloc of plan.allocations) {
+        // FIX: allocateFEFO returns alloc.batchId (not alloc.batch.id)
+        const batchId = alloc.batchId;
+
         // Create BatchAllocation
         await tx.batchAllocation.create({
           data: {
             organizationId,
             salesOrderItemId: plan.item.id,
-            batchId: alloc.batch.id,
+            batchId,
             quantity: alloc.allocatedQuantity,
           },
         });
 
         // Update ProductBatch
-        const batch = await tx.productBatch.findUnique({ where: { id: alloc.batch.id } });
+        const batch = await tx.productBatch.findUnique({ where: { id: batchId } });
         const newAvailable = batch.availableQuantity - alloc.allocatedQuantity;
         const newReserved = batch.reservedQuantity + alloc.allocatedQuantity;
         
         await tx.productBatch.update({
-          where: { id: alloc.batch.id },
+          where: { id: batchId },
           data: {
             availableQuantity: newAvailable,
             reservedQuantity: newReserved,
@@ -413,7 +429,7 @@ export async function confirmOrder(organizationId, orderId, userId) {
           data: {
             organizationId,
             productId: plan.item.productId,
-            batchId: alloc.batch.id,
+            batchId,
             type: 'RESERVATION',
             quantity: alloc.allocatedQuantity,
             referenceType: 'SALES_ORDER',
@@ -456,44 +472,56 @@ export async function confirmOrder(organizationId, orderId, userId) {
  * Decrements reservedQuantity, creates DISPATCH movements, updates CustomerCredit.
  */
 export async function dispatchOrder(organizationId, orderId, userId) {
-  const order = await prisma.salesOrder.findFirst({
+  // Pre-flight check (fast-fail before acquiring transaction resources)
+  const orderCheck = await prisma.salesOrder.findFirst({
     where: { id: orderId, organizationId },
-    include: {
-      items: {
-        include: {
-          allocations: true,
-        },
-      },
-    },
   });
 
-  if (!order) {
+  if (!orderCheck) {
     const err = new Error('Sales order not found.');
     err.statusCode = 404;
     err.code = 'NOT_FOUND';
     throw err;
   }
 
-  if (order.status !== 'CONFIRMED') {
-    const err = new Error(`Cannot dispatch order in "${order.status}" state.`);
+  if (orderCheck.status !== 'CONFIRMED') {
+    const err = new Error(`Cannot dispatch order in "${orderCheck.status}" state.`);
     err.statusCode = 400;
     err.code = 'INVALID_ORDER_STATE';
     throw err;
   }
 
   return prisma.$transaction(async (tx) => {
+    // Re-fetch with lock inside transaction to prevent race conditions on double-dispatch
+    const order = await tx.salesOrder.findFirst({
+      where: { id: orderId, organizationId, status: 'CONFIRMED' },
+      include: {
+        items: {
+          include: {
+            allocations: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      const err = new Error('Order is no longer in CONFIRMED state. Concurrent dispatch blocked.');
+      err.statusCode = 400;
+      err.code = 'INVALID_ORDER_STATE';
+      throw err;
+    }
     for (const item of order.items) {
       for (const alloc of item.allocations) {
         // Decrement reservedQuantity
         const batch = await tx.productBatch.findUnique({ where: { id: alloc.batchId } });
         const newReserved = batch.reservedQuantity - alloc.quantity;
-        
+        const newReservedData = { reservedQuantity: newReserved };
+        if (batch.availableQuantity <= 0 && newReserved <= 0) {
+          newReservedData.status = 'DEPLETED';
+        }
         await tx.productBatch.update({
           where: { id: alloc.batchId },
-          data: {
-            reservedQuantity: newReserved,
-            status: (batch.availableQuantity <= 0 && newReserved <= 0) ? 'DEPLETED' : undefined,
-          },
+          data: newReservedData,
         });
 
         // StockMovement

@@ -1,6 +1,6 @@
 import express from 'express';
 import * as invoiceController from '../controllers/invoiceController.js';
-import { authenticateToken, requirePermission } from '../middleware/auth.js';
+import { authenticateToken, requirePermission } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 

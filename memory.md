@@ -228,3 +228,42 @@
   - Create visual charting and aggregated query endpoints.
   - Revamp the `DashboardView.jsx` and `ReportsView.jsx`.
   - Update `phase.md` and `memory.md` upon completion.
+
+---
+
+### Session 11 Log (Phase 12 Completion)
+- **Developer / Agent:** Antigravity
+- **Timestamp:** 2026-09-15
+- **Summary of Actions:**
+  - Designed and executed the implementation plan for Phase 12: Dashboard KPIs & Reports.
+  - Implemented `dashboardService.js` utilizing Prisma aggregations (`aggregate`, `count`, `findMany`) to pull live data for KPIs and generate system alerts (expiring batches in 30 days, credit utilization > 90%).
+  - Implemented `reportService.js` providing raw data extraction for the 4 core business reports (Expiry, Sales Volume, Credit Risk, Collections).
+  - Created `dashboardController.js` and `dashboardRoutes.js`, mounting them in `app.js`.
+  - Rewrote `DashboardView.jsx` to dynamically fetch live metrics and alerts on mount via `apiGet()`.
+  - Rewrote `ReportsView.jsx` to dynamically hit the new reports API, converting JSON payloads into downloadable CSV blobs.
+- **Current State:**
+  - Phase 1–12 Checkpoints: **PASSED**.
+  - System now features a fully functional reporting dashboard.
+- **Next Developer Steps (Phase 13 - End-to-End Hardening & Testing):**
+  - Implement and run Golden Scenario E2E test.
+  - Fortify edge cases (expired batches in FEFO, duplicate dispatch, etc.).
+  - Update `phase.md` and `memory.md` upon completion.
+
+---
+
+### Session 12 Log (Phase 13 Completion)
+- **Developer / Agent:** Antigravity
+- **Timestamp:** 2026-09-15
+- **Summary of Actions:**
+  - Hardened edge cases across services: fixed `allocateFEFO` return shape bugs, implemented strict double-allocation transaction guards in `confirmOrder` and `dispatchOrder`, handled floating point zeroing for `CustomerCredit`.
+  - Fixed Prisma `undefined` update data issues during batch depletion in `dispatchOrder`.
+  - Built comprehensive `backend/scripts/run_golden_scenario.js` mimicking end-to-end user actions programmatically (Order check → Draft → Confirm → Dispatch → Invoice → Payment).
+  - Built `backend/scripts/reset_golden_scenario.js` to efficiently clean up state between E2E test runs.
+  - Successfully executed Golden Scenario test suite proving the full order-to-cash lifecycle and credit loop integrity.
+- **Current State:**
+  - Phase 1–13 Checkpoints: **PASSED**.
+  - System logic is robust against race conditions, bad payloads, and partial state anomalies.
+- **Next Developer Steps (Phase 14 - Seed Data & Polish):**
+  - Generate and run rich database seed for presentation (multiple products, diverse customers, rich batches, sample orders).
+  - Polish frontend UX (notifications, empty states, loader spinners, UI aesthetics).
+  - Final project review and handover documentation preparation.

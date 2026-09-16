@@ -199,13 +199,17 @@ export async function recordPayment(organizationId, invoiceId, paymentData, user
     }
 
     // Decrement CustomerCredit outstanding amount to free up credit line
+    // Guard: ensure outstanding amount never goes below 0 (float safety)
+    const currentCredit = await tx.customerCredit.findFirst({
+      where: { customerId: invoice.customerId },
+      select: { outstandingAmount: true },
+    });
+    const newOutstanding = Math.max(0, (currentCredit?.outstandingAmount ?? 0) - amount);
     await tx.customerCredit.update({
       where: { customerId: invoice.customerId },
       data: {
-        outstandingAmount: {
-          decrement: amount
-        }
-      }
+        outstandingAmount: newOutstanding,
+      },
     });
 
     // Create Audit Log
