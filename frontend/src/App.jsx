@@ -12,6 +12,7 @@ import PricingView from './components/PricingView';
 import SalesOrdersView from './components/SalesOrdersView';
 import InvoicesView from './components/InvoicesView';
 import ReportsView from './components/ReportsView';
+import UsersView from './components/UsersView';
 
 import { 
   Sprout, 
@@ -30,7 +31,8 @@ import {
   Bell,
   ShieldAlert,
   Loader2,
-  Lock
+  Lock,
+  UserCog
 } from 'lucide-react';
 
 export default function App() {
@@ -88,6 +90,7 @@ export default function App() {
     { id: 'sales', label: 'Sales Orders', icon: <ShoppingCart size={18} />, permission: 'sales.view' },
     { id: 'invoices', label: 'Invoices & Payments', icon: <Receipt size={18} />, permission: 'invoices.view' },
     { id: 'reports', label: 'Analytics & Reports', icon: <BarChart3 size={18} />, permission: 'dashboard.view' },
+    { id: 'users', label: 'User Management', icon: <UserCog size={18} />, permission: 'users.manage' },
   ];
 
   const filteredNavItems = navItems.filter(item => hasPermission(item.permission));
@@ -132,6 +135,8 @@ export default function App() {
         return <InvoicesView />;
       case 'reports':
         return <ReportsView />;
+      case 'users':
+        return <UsersView />;
       default:
         return <DashboardView />;
     }

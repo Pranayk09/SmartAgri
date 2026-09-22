@@ -46,43 +46,38 @@ const PERMISSIONS = [
   { name: 'pricing.delete', description: 'Delete bulk pricing tier rules' }
 ];
 
+/**
+ * 3-Role RBAC Model:
+ *  - OWNER:             Full access to every module + user management
+ *  - INVENTORY_MANAGER: Products, Batches, Stock, FEFO only
+ *  - SALES_MANAGER:     Customers, Credit, Pricing, Sales, Invoices, Payments only
+ */
 const ROLES = {
   OWNER: {
     name: 'OWNER',
-    description: 'System Owner with full access across all operations',
-    permissions: PERMISSIONS.map(p => p.name)
+    description: 'System Owner with full access across all modules, user management, and organization settings',
+    permissions: PERMISSIONS.map(p => p.name) // all permissions
   },
-  ADMIN: {
-    name: 'ADMIN',
-    description: 'Administrator with full management access',
-    permissions: PERMISSIONS.map(p => p.name)
-  },
-  WAREHOUSE_MANAGER: {
-    name: 'WAREHOUSE_MANAGER',
-    description: 'Manages batch inventory, stock movements, and order dispatch',
+  INVENTORY_MANAGER: {
+    name: 'INVENTORY_MANAGER',
+    description: 'Manages products, batch inventory, stock movements, expiry tracking, and FEFO allocations. Cannot access sales, customer credit, payments, or user administration.',
     permissions: [
-      'dashboard.view', 'products.view', 'inventory.view', 'inventory.adjust', 'inventory.fefo', 'sales.view', 'sales.dispatch'
+      'dashboard.view',
+      'products.view', 'products.create', 'products.update', 'products.delete',
+      'inventory.view', 'inventory.adjust', 'inventory.fefo'
     ]
   },
   SALES_MANAGER: {
     name: 'SALES_MANAGER',
-    description: 'Manages sales operations, customer accounts, and order confirmations',
+    description: 'Manages customers, credit limits, pricing rules, sales orders, invoices, and payments. Cannot directly modify inventory batches or administer users.',
     permissions: [
-      'dashboard.view', 'products.view', 'inventory.view', 'customers.view', 'customers.create', 'customers.update', 'pricing.view', 'sales.create', 'sales.view', 'sales.confirm', 'invoices.view'
-    ]
-  },
-  SALES_EXECUTIVE: {
-    name: 'SALES_EXECUTIVE',
-    description: 'Handles basic customer interactions and drafts sales orders',
-    permissions: [
-      'dashboard.view', 'products.view', 'inventory.view', 'customers.view', 'customers.create', 'sales.create', 'sales.view'
-    ]
-  },
-  FINANCE_MANAGER: {
-    name: 'FINANCE_MANAGER',
-    description: 'Manages credit terms, pricing rules, invoicing, and payment processing',
-    permissions: [
-      'dashboard.view', 'customers.view', 'customers.credit', 'pricing.view', 'pricing.create', 'pricing.update', 'pricing.delete', 'sales.view', 'invoices.create', 'invoices.view', 'invoices.payment'
+      'dashboard.view',
+      'products.view',
+      'inventory.view',
+      'customers.view', 'customers.create', 'customers.update', 'customers.credit', 'customers.delete',
+      'pricing.view', 'pricing.create', 'pricing.update', 'pricing.delete',
+      'sales.create', 'sales.view', 'sales.confirm', 'sales.dispatch',
+      'invoices.create', 'invoices.view', 'invoices.payment'
     ]
   }
 };
@@ -141,8 +136,14 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: 'sales@smartagri.com' },
-    update: { passwordHash: pass },
+    update: { passwordHash: pass, roleId: seededRoles['SALES_MANAGER'].id },
     create: { name: 'Sales Manager', email: 'sales@smartagri.com', passwordHash: pass, roleId: seededRoles['SALES_MANAGER'].id, organizationId: org.id, status: 'ACTIVE' }
+  });
+
+  await prisma.user.upsert({
+    where: { email: 'inventory@smartagri.com' },
+    update: { passwordHash: pass, roleId: seededRoles['INVENTORY_MANAGER'].id },
+    create: { name: 'Inventory Manager', email: 'inventory@smartagri.com', passwordHash: pass, roleId: seededRoles['INVENTORY_MANAGER'].id, organizationId: org.id, status: 'ACTIVE' }
   });
 
   // Clean data to prevent duplicates (Batches, Orders, Invoices, StockMovement, PriceRules, Customers, Products, Categories)

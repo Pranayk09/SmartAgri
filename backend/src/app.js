@@ -9,6 +9,7 @@ import pricingRoutes from './routes/pricingRoutes.js';
 import salesOrderRoutes from './routes/salesOrderRoutes.js';
 import invoiceRoutes from './routes/invoiceRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
+import userRoutes from './routes/userRoutes.js';
 
 dotenv.config();
 
@@ -51,6 +52,9 @@ app.use('/api/invoices', invoiceRoutes);
 
 // Dashboard & Reports Routes
 app.use('/api/dashboard', dashboardRoutes);
+
+// User Management Routes (OWNER only via users.manage permission)
+app.use('/api/users', userRoutes);
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {
