@@ -1,4 +1,5 @@
 import * as authService from '../services/authService.js';
+import { prisma } from '../config/db.js';
 
 /**
  * Handle user registration POST /api/auth/register.
@@ -87,6 +88,27 @@ export async function me(req, res, next) {
     res.status(200).json({
       success: true,
       data: profile
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Fetch all active organizations for the signup dropdown GET /api/auth/organizations.
+ * Public endpoint — no auth required.
+ */
+export async function getOrganizations(req, res, next) {
+  try {
+    const organizations = await prisma.organization.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, code: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+
+    res.status(200).json({
+      success: true,
+      data: organizations,
     });
   } catch (error) {
     next(error);
