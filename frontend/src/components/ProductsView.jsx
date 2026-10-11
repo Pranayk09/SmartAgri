@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Pencil, Trash, X, Loader2, FolderHeart, ShieldAlert } from 'lucide-react';
+import { Plus, Pencil, Trash, X, Loader2, FolderHeart, ShieldAlert, Upload } from 'lucide-react';
+import BulkImportModal from './BulkImportModal';
 
 export default function ProductsView() {
   const { showToast } = useToast();
@@ -17,6 +18,7 @@ export default function ProductsView() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null); // { type: 'product'|'category', id, name }
+  const [showBulkImport, setShowBulkImport] = useState(false);
 
   // Editing state
   const [editingCategory, setEditingCategory] = useState(null);
@@ -216,12 +218,21 @@ export default function ProductsView() {
           <p style={styles.subtitle}>Define categories and finished products with default pricing rules and safety margins.</p>
         </div>
         {canCreate && (
-          <button 
-            onClick={() => activeTab === 'products' ? openProductModal() : openCategoryModal()} 
-            style={styles.addBtn}
-          >
-            <Plus size={16} /> Add {activeTab === 'products' ? 'Product' : 'Category'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'center' }}>
+            <button
+              onClick={() => setShowBulkImport(true)}
+              style={styles.importBtn}
+              title="Import products from Excel or CSV file"
+            >
+              <Upload size={15} /> Import from File
+            </button>
+            <button 
+              onClick={() => activeTab === 'products' ? openProductModal() : openCategoryModal()} 
+              style={styles.addBtn}
+            >
+              <Plus size={16} /> Add {activeTab === 'products' ? 'Product' : 'Category'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -556,6 +567,19 @@ export default function ProductsView() {
       )}
 
       {/* ========================================== */}
+      {/* BULK IMPORT MODAL                          */}
+      {/* ========================================== */}
+      {showBulkImport && (
+        <BulkImportModal
+          onClose={() => setShowBulkImport(false)}
+          onImportComplete={() => {
+            fetchData();
+            setShowBulkImport(false);
+          }}
+        />
+      )}
+
+      {/* ========================================== */}
       {/* DELETE CONFIRMATION OVERLAY (sleek alert) */}
       {/* ========================================== */}
       {showDeleteConfirm && (
@@ -612,6 +636,20 @@ const styles = {
     backgroundColor: '#059669',
     color: '#ffffff',
     border: 'none',
+    borderRadius: '8px',
+    padding: '0.625rem 1rem',
+    fontSize: '0.8125rem',
+    fontWeight: 700,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  },
+  importBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    backgroundColor: 'transparent',
+    color: '#10b981',
+    border: '1px solid rgba(16,185,129,0.35)',
     borderRadius: '8px',
     padding: '0.625rem 1rem',
     fontSize: '0.8125rem',
