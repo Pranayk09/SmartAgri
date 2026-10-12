@@ -68,9 +68,10 @@ export default function App() {
   // Sync state with hash route
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      if (hash) {
-        setCurrentView(hash);
+      const rawHash = window.location.hash.replace('#', '');
+      const viewName = rawHash.split('?')[0];
+      if (viewName) {
+        setCurrentView(viewName);
       } else {
         setCurrentView('dashboard');
       }

@@ -216,14 +216,14 @@ export default function DashboardView() {
           </div>
 
           <div style={styles.actionGrid}>
-            <a href="#sales" className="card card-hover" style={styles.actionTile}>
+            <a href="#sales?action=new" className="card card-hover" style={styles.actionTile}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ ...styles.actionIconBox, backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
                   <PlusCircle size={20} />
                 </div>
                 <div>
                   <div style={styles.actionTitle}>New Sales Order</div>
-                  <div style={styles.actionDesc}>Draft order & credit limit check</div>
+                  <div style={styles.actionDesc}>Contextual workspace & FEFO check</div>
                 </div>
               </div>
               <ChevronRight size={16} color="var(--text-tertiary)" />
@@ -368,6 +368,12 @@ export default function DashboardView() {
                         <span style={styles.alertTime}>{alert.time}</span>
                       </div>
                       <p style={styles.alertText}>{alert.message}</p>
+                      <a 
+                        href={alert.title?.toLowerCase().includes('expiry') ? '#inventory' : '#customers'}
+                        style={{ fontSize: '11px', color: isError ? '#ef4444' : '#f59e0b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '4px', textDecoration: 'none' }}
+                      >
+                        Inspect in Context Workspace →
+                      </a>
                     </div>
                   </div>
                 );

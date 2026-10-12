@@ -256,6 +256,9 @@ export async function createOrder(organizationId, userId, data) {
     0
   );
 
+  // Business rule: Maintain credit limit - if order amount > available credit, order cannot be created
+  await validateCreditForOrder(organizationId, customerId, totalAmount);
+
   const paymentTermsDays = customer.credit?.paymentTermsDays ?? 30;
   const orderNumber = await generateOrderNumber(organizationId);
 

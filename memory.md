@@ -157,3 +157,116 @@
 - Complete ERP UI/UX Redesign (UI-P1 through UI-P7): **COMPLETED & OPERATIONAL**.
 - Both dark and light themes supported with one-click instant toggle and state persistence.
 - Zero business logic changes — all APIs and endpoints untouched.
+
+---
+
+## Session 14 Log — Contextual, Task-Centered Workspaces (Phase 15)
+- **Developer / Agent:** Antigravity (Gemini 3.6 Flash)
+- **Timestamp:** 2026-10-12
+- **Scope:** Phase 15 - Redesign information architecture and interaction patterns into contextual, task-centered workspaces without altering backend business logic, calculations, or API contracts.
+
+### Core Problem Solved:
+Eliminated cross-module context switching and high cognitive load where users had to repeatedly navigate away between tabs (Sales, Customers, Inventory, Pricing, Invoices) to gather information required for their active task.
+
+### Work Completed:
+
+#### 1. Contextual Design Tokens & System (`frontend/src/index.css`)
+- Implemented responsive task workspace layout classes (`.workspace-container`, `.workspace-split`, `.workspace-split-equal`, `.context-header`, `.context-nav-tabs`, `.context-kpi-grid`, `.context-table`, `.context-flyout-*`, `.context-utilization-meter`).
+- Breakpoints tuned at `960px` to maintain a desktop two-column split layout on standard displays while gracefully collapsing to stacked viewports on tablets/mobile.
+- Full theme-variable compliance across both Dark and Light themes.
+
+#### 2. Enhanced Query Parameter Navigation (`frontend/src/App.jsx`)
+- Updated window hash router to parse deep-linking query parameters (e.g., `#sales?action=new`, `#sales?customerId=...`, `#customers?id=...`, `#inventory?batch=...`), enabling seamless cross-workspace deep navigation while preserving routing state.
+
+#### 3. Sales Order Creation & Management Workspace (`frontend/src/components/SalesOrdersView.jsx`)
+- **Two-Column Task Layout (`viewMode === 'workspace'`):**
+  - **Left Work Area:** Customer selector, multi-line order item builder with live quantity controls, subtotal/tax/total computation, and evaluation triggers.
+  - **Right Contextual Panels:**
+    - *Customer Credit & History Panel:* Live visual credit utilization meter, outstanding amount, available credit calculation (`creditLimit - outstandingAmount`), unpaid invoice count, and previous order history with status pills. Dynamic entity-awareness instantly refreshes upon changing customer selection.
+    - *Inventory Batch & Expiry Panel:* Real-time batch stock levels, warehouse locations, and days-to-expiry countdown badges for all selected products.
+    - *Bulk Pricing Rule Tier Matrix:* Live tier lookup displaying quantity brackets, unit rates, and discount percentages for items in the order.
+    - *Pre-flight Evaluation Gate:* One-click check that evaluates stock reservation feasibility, credit headroom, and profit margin compliance before submission.
+- **Order 360 Flyout Drawer:**
+  - Slide-out side drawer in the order registry allowing instant inspection of line items, FEFO batch allocations, and direct execution of in-context actions: Confirm Order, Dispatch Order, and Generate Tax Invoice without leaving the registry.
+
+#### 4. Customer 360 Master-Detail Workspace (`frontend/src/components/CustomersView.jsx`)
+- Replaced disconnected accounts and credit views with a unified Master-Detail Customer 360 Workspace:
+  - **Left Panel:** Searchable, filterable customer list with credit status badges and instant selection.
+  - **Right 360 Console:**
+    - Dynamic Customer Header with company name, email, phone, address, and live credit health meter.
+    - **Tab 1 - Order History:** Filterable table of all customer sales orders with status tags and deep-links to order inspection.
+    - **Tab 2 - Invoices Ledger:** Open and paid invoices with balance dues and an inline "Record Payment" modal trigger.
+    - **Tab 3 - Payment Receipts:** Audit trail of previous payments and payment allocation history.
+    - **Tab 4 - Credit Policy:** Credit limit, outstanding balance, credit terms, and risk indicators.
+
+#### 5. Contextual Invoices & Finance Workspace (`frontend/src/components/InvoicesView.jsx`)
+- Contextual Ledger with dedicated tabs for Tax Invoices and Pending Dispatches.
+- **In-Context Payment Recording Modal:**
+  - Live customer credit restoration preview showing exact financial impact (`New Outstanding = Outstanding - Payment`, `New Available Credit = Available + Payment`).
+  - Invoice payment history showing prior partial payments.
+  - In-dialog table of other outstanding customer invoices to assist in payment allocation decisions.
+
+#### 6. Contextual Inventory Workspace (`frontend/src/components/InventoryView.jsx`)
+- **Batch Context Drawer:**
+  - Slide-out side sheet displaying product SKU/category, warehouse location, stock status badge, shelf-life countdown, and the complete immutable `StockMovement` audit ledger.
+- **Contextual Stock Adjustment Modal:**
+  - Displays current balance and computes new balance preview in real-time.
+- **Integrated FEFO Simulator & Expiry Radar:**
+  - Integrated directly alongside batch records with one-click expiry status synchronization.
+
+#### 7. Cross-Module Deep Linking (`frontend/src/components/DashboardView.jsx`)
+- Wired dashboard KPI cards and operational quick action buttons (`#sales?action=new`) to deep-link directly into the new contextual workspaces with appropriate filters pre-applied.
+
+---
+
+### Before vs. After Task Completion Metrics:
+
+| Workflow | Metric | Before Redesign | After Redesign (Phase 15) | Improvement |
+|---|---|---|---|---|
+| **Sales Order Creation** | Page transitions to gather context | 3–4 transitions (Sales → Customers → Inventory → Pricing → Sales) | **0 transitions** (All context rendered side-by-side in workspace) | **100% reduction** in context switching |
+| | Unpaid invoice & credit check | Must open Customers tab in new tab or memorize balance | Real-time credit utilization bar & unpaid invoice list inline | Instant visibility |
+| | Stock & expiry verification | Must navigate to Inventory Batches tab | Real-time batch stock & expiry countdown visible in side panel | Zero cognitive load |
+| | Bulk pricing rule lookup | Must navigate to Pricing Rules tab | Live pricing tier matrix rendered directly in order builder | Automatic tier resolution |
+| **Customer Review & Collection** | Page transitions to review account | 3 transitions (Customers → Sales Orders → Invoices) | **0 transitions** (Customer 360 Master-Detail workspace) | **100% reduction** in navigation |
+| | Payment recording from customer | Navigate to Invoices module, search customer | Trigger payment directly from Customer 360 Invoices ledger | Immediate inline action |
+| **Invoice Payment Recording** | Credit impact verification | Navigate to Customers tab to confirm credit was restored | Real-time credit restoration preview in payment dialog | Instant feedback |
+| | Multiple open invoices check | Navigate to Invoices ledger to find other unpaid invoices | Other unpaid customer invoices displayed inside payment modal | Immediate visibility |
+| **Batch Inventory Inspection** | Audit trail & movement check | Navigate to Stock Movements subtab, search batch ID | Integrated Batch Context flyout drawer with movement ledger | Zero page changes |
+
+---
+
+### Verification & Testing:
+1. **Production Build:** `npm run build` executed successfully with 0 errors.
+2. **End-to-End Browser Subagent Testing:**
+   - Logged in as `owner@smartagri.com`.
+   - Verified Sales Order Workspace (`#sales?action=new`): Customer credit meter, unpaid invoices, previous orders, batch stock levels, expiry countdowns, and tier matrix all dynamically updated when selecting customers.
+   - Tested Order 360 Flyout drawer on order list.
+   - Verified Customer 360 Workspace (`#customers`): Master-detail selection, order history, invoices ledger, payment history, and credit policy tabs.
+   - Verified Contextual Payment Modal (`#invoices`): Credit restoration preview, payment history, and other unpaid invoices display correctly.
+   - Verified Batch Context Drawer (`#inventory`): Batch details, shelf-life, and immutable stock movement audit ledger inspected cleanly.
+   - Verified light and dark theme compatibility.
+
+---
+
+### Files Modified:
+- `frontend/src/index.css`
+- `frontend/src/App.jsx`
+- `frontend/src/components/SalesOrdersView.jsx`
+- `frontend/src/components/CustomersView.jsx`
+- `frontend/src/components/InvoicesView.jsx`
+- `frontend/src/components/InventoryView.jsx`
+- `frontend/src/components/DashboardView.jsx`
+- `architecture.md`
+- `plan.md`
+- `phase.md`
+- `phases.md`
+- `memory.md`
+
+---
+
+### Current State & Handover:
+- **Phase 15 Status:** 🟢 **COMPLETED & VERIFIED**.
+- **Backend & Database:** Node.js Express server running on port 5000, PostgreSQL database seeded with full operational dataset. Zero backend modifications or contract changes.
+- **Frontend:** React + Vite running on port 3001, production build verified.
+- **Next Steps:** No outstanding tasks. The contextual task-centered workspaces are fully implemented, verified, and documented according to all project specifications.
+

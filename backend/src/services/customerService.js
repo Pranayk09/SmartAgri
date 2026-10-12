@@ -48,7 +48,7 @@ export async function createCustomer(organizationId, data) {
     throw error;
   }
 
-  const parsedCreditLimit = creditLimit !== undefined ? parseFloat(creditLimit) : 0;
+  const parsedCreditLimit = (creditLimit !== undefined && creditLimit !== '') ? parseFloat(creditLimit) : 0;
   if (isNaN(parsedCreditLimit) || parsedCreditLimit < 0) {
     const error = new Error('Credit limit must be a non-negative number.');
     error.statusCode = 400;
@@ -56,7 +56,7 @@ export async function createCustomer(organizationId, data) {
     throw error;
   }
 
-  const parsedTerms = paymentTermsDays !== undefined ? parseInt(paymentTermsDays, 10) : 30;
+  const parsedTerms = (paymentTermsDays !== undefined && paymentTermsDays !== '') ? parseInt(paymentTermsDays, 10) : 30;
   if (isNaN(parsedTerms) || parsedTerms < 0) {
     const error = new Error('Payment terms must be a non-negative integer.');
     error.statusCode = 400;

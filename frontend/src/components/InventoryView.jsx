@@ -1,32 +1,20 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
+import { apiGet, apiPost } from '../utils/api';
 import {
-  Boxes,
-  Calendar,
-  ShieldAlert,
-  Play,
-  Plus,
-  Sliders,
-  History,
-  Loader2,
-  X,
-  RefreshCw,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  BarChart3,
-  Zap,
-  TrendingDown,
+  Boxes, Calendar, ShieldAlert, Play, Plus, Sliders, History,
+  Loader2, X, RefreshCw, AlertTriangle, CheckCircle2, XCircle,
+  BarChart3, Zap, TrendingDown, Search, Filter, Layers, ExternalLink,
+  Info, Eye, ArrowRight, Package, Clock
 } from 'lucide-react';
 
-// ─── Expiry classification helper (mirrors backend logic) ─────────────────────
+// ─── Expiry Classification Helper ────────────────────────────────────
 function classifyExpiry(expiryDate) {
   const now = new Date();
   const expiry = new Date(expiryDate);
   if (expiry <= now) return 'EXPIRED';
-  const diffDays = (expiry - now) / (1000 * 60 * 60 * 24);
+  const diffDays = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
   if (diffDays <= 30) return 'EXPIRING_SOON';
   return 'AVAILABLE';
 }
@@ -38,945 +26,1086 @@ function ExpiryBadge({ status, expiryDate }) {
     EXPIRED:       { cls: 'badge-danger',  label: 'Expired' },
     EXPIRING_SOON: { cls: 'badge-warning', label: 'Expiring Soon' },
     AVAILABLE:     { cls: 'badge-success', label: 'Available' },
-    DEPLETED:      { cls: 'badge-info',    label: 'Depleted' },
-    BLOCKED:       { cls: 'badge-info',    label: 'Blocked' },
+    DEPLETED:      { cls: 'badge-neutral', label: 'Depleted' },
+    BLOCKED:       { cls: 'badge-danger',  label: 'Blocked' },
   };
-  const { cls, label } = map[effective] || { cls: 'badge-info', label: effective };
+  const { cls, label } = map[effective] || { cls: 'badge-neutral', label: effective };
   return <span className={`badge ${cls}`}>{label}</span>;
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────────
+// ─── Modal Wrapper ────────────────────────────────────────────────────
+function Modal({ title, onClose, children, maxWidth = '560px' }) {
+  return (
+    <div style={ms.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ ...ms.modal, maxWidth }}>
+        <div style={ms.header}>
+          <h3 style={ms.title}>{title}</h3>
+          <button onClick={onClose} style={ms.closeBtn}><X size={18} /></button>
+        </div>
+        <div style={ms.body}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component: Contextual Inventory Workspace ──────────────────
 export default function InventoryView() {
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
+  const canAdjust = hasPermission('inventory.adjust');
 
-  const [activeSubTab, setActiveSubTab] = useState('batches');
+  const [activeSubTab, setActiveSubTab] = useState('batches'); // 'batches' | 'expiry' | 'fefo' | 'ledger'
   const [batches, setBatches] = useState([]);
   const [products, setProducts] = useState([]);
   const [movements, setMovements] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Expiry Dashboard state
+  // Search & Filter
+  const [searchQuery, setSearchQuery] = useState('');
+  const [productFilter, setProductFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+
+  // Selected Batch Context Drawer
+  const [inspectBatch, setInspectBatch] = useState(null);
+
+  // Expiry Dashboard
   const [expiryDashboard, setExpiryDashboard] = useState(null);
   const [expiryLoading, setExpiryLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
 
-  // FEFO Preview state
+  // FEFO Preview Simulator
   const [fefoProductId, setFefoProductId] = useState('');
   const [fefoQty, setFefoQty] = useState(10000);
   const [fefoLoading, setFefoLoading] = useState(false);
   const [fefoResult, setFefoResult] = useState(null);
 
-  // Modal visibility
+  // Modals
   const [showAddBatchModal, setShowAddBatchModal] = useState(false);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
-  const [selectedBatch, setSelectedBatch] = useState(null);
+  const [selectedBatchForAdjust, setSelectedBatchForAdjust] = useState(null);
+  const [adjustSubmitting, setAdjustSubmitting] = useState(false);
 
-  // Form states
+  // Forms
   const [batchForm, setBatchForm] = useState({
-    productId: '',
-    batchNumber: '',
-    manufacturingDate: '',
-    expiryDate: '',
-    initialQuantity: '',
+    productId: '', batchNumber: '', manufacturingDate: '', expiryDate: '', initialQuantity: '',
   });
 
   const [adjustForm, setAdjustForm] = useState({
-    type: 'ADJUSTMENT_IN',
-    quantity: '',
-    reason: '',
+    type: 'ADJUSTMENT_IN', quantity: '', reason: '',
   });
 
-  const canAdjust = hasPermission('inventory.adjust');
-
-  // ─── Data Fetching ──────────────────────────────────────────────────────────
-
+  // ─── Data Fetching ──────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [batchRes, prodRes, moveRes] = await Promise.all([
-        axios.get('/api/inventory/batches'),
-        axios.get('/api/products'),
-        axios.get('/api/inventory/movements'),
+        apiGet('/inventory/batches').catch(() => ({ data: [] })),
+        apiGet('/products').catch(() => ({ data: [] })),
+        apiGet('/inventory/movements').catch(() => ({ data: [] })),
       ]);
-      if (batchRes.data.success) setBatches(batchRes.data.data);
-      if (prodRes.data.success) {
-        const active = prodRes.data.data.filter((p) => p.status === 'ACTIVE');
-        setProducts(active);
-        if (active.length > 0 && !fefoProductId) setFefoProductId(active[0].id);
+      const fetchedBatches = batchRes.data || [];
+      const fetchedProducts = (prodRes.data || []).filter(p => p.status === 'ACTIVE');
+
+      setBatches(fetchedBatches);
+      setProducts(fetchedProducts);
+      setMovements(moveRes.data || []);
+
+      if (fetchedProducts.length > 0 && !fefoProductId) {
+        setFefoProductId(fetchedProducts[0].id);
       }
-      if (moveRes.data.success) setMovements(moveRes.data.data);
-    } catch (error) {
-      const errMsg = error.response?.data?.error?.message || error.message || 'Error fetching inventory data.';
-      showToast(errMsg, 'error');
+
+      // Check URL hash for batch preselection (e.g. #inventory?batch=...)
+      const hash = window.location.hash;
+      if (hash.includes('?')) {
+        const params = new URLSearchParams(hash.split('?')[1]);
+        const bNum = params.get('batch');
+        if (bNum) {
+          const match = fetchedBatches.find(b => b.batchNumber === bNum);
+          if (match) setInspectBatch(match);
+        }
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fefoProductId, showToast]);
 
   const fetchExpiryDashboard = useCallback(async () => {
     setExpiryLoading(true);
     try {
-      const res = await axios.get('/api/inventory/expiry/dashboard');
-      if (res.data.success) setExpiryDashboard(res.data.data);
-    } catch (error) {
-      const errMsg = error.response?.data?.error?.message || error.message || 'Failed to fetch expiry dashboard.';
-      showToast(errMsg, 'error');
+      const res = await apiGet('/inventory/expiry/dashboard');
+      setExpiryDashboard(res.data);
+    } catch (err) {
+      showToast(err.message, 'error');
     } finally {
       setExpiryLoading(false);
     }
-  }, []);
+  }, [showToast]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   useEffect(() => {
     if (activeSubTab === 'expiry') fetchExpiryDashboard();
-  }, [activeSubTab]);
+  }, [activeSubTab, fetchExpiryDashboard]);
 
-  // ─── Handlers ───────────────────────────────────────────────────────────────
-
+  // ─── Actions ────────────────────────────────────────────────────────
   const handleAddBatch = async (e) => {
     e.preventDefault();
     const { productId, batchNumber, manufacturingDate, expiryDate, initialQuantity } = batchForm;
     if (!productId || !batchNumber.trim() || !manufacturingDate || !expiryDate || initialQuantity === '') {
-      showToast('Please fill in all required fields.', 'warning');
+      showToast('Please fill in all required batch fields.', 'warning');
       return;
     }
     try {
-      const response = await axios.post('/api/inventory/batches', {
+      await apiPost('/inventory/batches', {
         ...batchForm,
         initialQuantity: parseFloat(initialQuantity),
       });
-      if (response.data.success) {
-        showToast('Batch inventory created successfully!', 'success');
-        setShowAddBatchModal(false);
-        setBatchForm({ productId: '', batchNumber: '', manufacturingDate: '', expiryDate: '', initialQuantity: '' });
-        fetchData();
-      }
-    } catch (error) {
-      const errMsg = error.response?.data?.error?.message || error.message || 'Failed to add batch.';
-      showToast(errMsg, 'error');
+      showToast('Batch inventory registered successfully!', 'success');
+      setShowAddBatchModal(false);
+      setBatchForm({ productId: '', batchNumber: '', manufacturingDate: '', expiryDate: '', initialQuantity: '' });
+      fetchData();
+    } catch (err) {
+      showToast(err.message, 'error');
     }
   };
 
   const handleAdjustStock = async (e) => {
     e.preventDefault();
-    if (!selectedBatch) return;
+    if (!selectedBatchForAdjust) return;
     const { type, quantity, reason } = adjustForm;
-    if (quantity === '') {
-      showToast('Please enter an adjustment quantity.', 'warning');
+    if (!quantity || isNaN(parseFloat(quantity)) || parseFloat(quantity) <= 0) {
+      showToast('Please enter a valid adjustment quantity.', 'warning');
       return;
     }
+
+    setAdjustSubmitting(true);
     try {
-      const response = await axios.post(`/api/inventory/batches/${selectedBatch.id}/adjust`, {
+      await apiPost(`/inventory/batches/${selectedBatchForAdjust.id}/adjust`, {
         type,
         quantity: parseFloat(quantity),
-        reason,
+        reason: reason || 'Manual inventory reconciliation',
       });
-      if (response.data.success) {
-        showToast('Inventory adjusted successfully!', 'success');
-        setShowAdjustModal(false);
-        setSelectedBatch(null);
-        setAdjustForm({ type: 'ADJUSTMENT_IN', quantity: '', reason: '' });
-        fetchData();
+      showToast('Inventory adjusted successfully!', 'success');
+      setShowAdjustModal(false);
+      setSelectedBatchForAdjust(null);
+      setAdjustForm({ type: 'ADJUSTMENT_IN', quantity: '', reason: '' });
+      fetchData();
+      if (inspectBatch && inspectBatch.id === selectedBatchForAdjust.id) {
+        setInspectBatch(null);
       }
-    } catch (error) {
-      const errMsg = error.response?.data?.error?.message || error.message || 'Failed to adjust stock.';
-      showToast(errMsg, 'error');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setAdjustSubmitting(false);
     }
   };
 
   const handleSyncExpiry = async () => {
     setSyncLoading(true);
     try {
-      const res = await axios.post('/api/inventory/expiry/sync');
-      if (res.data.success) {
-        const { updated, expired, expiringSoon, normal } = res.data.data;
-        showToast(
-          `Expiry sync complete! Updated: ${updated} batch(es). Expired: ${expired}, Expiring Soon: ${expiringSoon}, Normal: ${normal}.`,
-          'success'
-        );
-        fetchData();
-        fetchExpiryDashboard();
-      }
-    } catch (error) {
-      const errMsg = error.response?.data?.error?.message || error.message || 'Expiry sync failed.';
-      showToast(errMsg, 'error');
+      const res = await apiPost('/inventory/expiry/sync');
+      const { updated, expired, expiringSoon, normal } = res.data;
+      showToast(`Expiry sync complete! Expired: ${expired}, Expiring Soon: ${expiringSoon}, Normal: ${normal}.`, 'success');
+      fetchData();
+      fetchExpiryDashboard();
+    } catch (err) {
+      showToast(err.message, 'error');
     } finally {
       setSyncLoading(false);
     }
   };
 
-  const handleFEFOPreview = async () => {
+  const handleFEFOPreview = async (e) => {
+    if (e) e.preventDefault();
     if (!fefoProductId) {
-      showToast('Please select a product.', 'warning');
+      showToast('Please select a product for FEFO simulation.', 'warning');
       return;
     }
     if (!fefoQty || fefoQty <= 0) {
-      showToast('Please enter a valid requested quantity.', 'warning');
+      showToast('Enter a valid requested quantity.', 'warning');
       return;
     }
+
     setFefoLoading(true);
     setFefoResult(null);
     try {
-      const res = await axios.post('/api/inventory/fefo/preview', {
+      const res = await apiPost('/inventory/fefo/preview', {
         productId: fefoProductId,
         quantity: parseFloat(fefoQty),
       });
-      if (res.data.success) {
-        setFefoResult(res.data.data);
-        if (res.data.data.canFulfill) {
-          showToast('FEFO allocation preview complete — order can be fulfilled!', 'success');
-        } else {
-          showToast(
-            `Insufficient stock! Shortage: ${res.data.data.shortage.toLocaleString()} units.`,
-            'error'
-          );
-        }
+      setFefoResult(res.data);
+      if (res.data.canFulfill) {
+        showToast('FEFO allocation preview complete — stock is sufficient!', 'success');
+      } else {
+        showToast(`Stock shortage of ${res.data.shortage.toLocaleString()} units!`, 'warning');
       }
-    } catch (error) {
-      const errMsg = error.response?.data?.error?.message || error.message || 'FEFO preview failed.';
-      showToast(errMsg, 'error');
+    } catch (err) {
+      showToast(err.message, 'error');
     } finally {
       setFefoLoading(false);
     }
   };
 
   const openAdjustModal = (batch) => {
-    setSelectedBatch(batch);
+    setSelectedBatchForAdjust(batch);
     setAdjustForm({ type: 'ADJUSTMENT_IN', quantity: '', reason: '' });
     setShowAdjustModal(true);
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // ─── Filtered Batches ───────────────────────────────────────────────
+  const filteredBatches = useMemo(() => {
+    return batches.filter(b => {
+      const matchSearch = !searchQuery ||
+        b.batchNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        b.product?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        b.product?.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchProduct = productFilter === 'ALL' || b.productId === productFilter;
+
+      let matchStatus = true;
+      if (statusFilter !== 'ALL') {
+        const live = classifyExpiry(b.expiryDate);
+        if (statusFilter === 'AVAILABLE') matchStatus = b.status === 'AVAILABLE' && live === 'AVAILABLE';
+        else if (statusFilter === 'EXPIRING_SOON') matchStatus = live === 'EXPIRING_SOON';
+        else if (statusFilter === 'EXPIRED') matchStatus = live === 'EXPIRED' || b.status === 'EXPIRED';
+        else if (statusFilter === 'DEPLETED') matchStatus = b.status === 'DEPLETED';
+      }
+
+      return matchSearch && matchProduct && matchStatus;
+    });
+  }, [batches, searchQuery, productFilter, statusFilter]);
+
+  // Context: Movements for the inspected batch
+  const inspectedBatchMovements = useMemo(() => {
+    if (!inspectBatch) return [];
+    return movements.filter(m => m.batchId === inspectBatch.id || m.batch?.batchNumber === inspectBatch.batchNumber);
+  }, [inspectBatch, movements]);
+
+  // Context: Other batches for the same product as the inspected batch
+  const sameProductBatches = useMemo(() => {
+    if (!inspectBatch) return [];
+    return batches.filter(b => b.productId === inspectBatch.productId);
+  }, [inspectBatch, batches]);
+
+  // Total stock across all batches for inspected product
+  const inspectedProductTotalAvailable = useMemo(() => {
+    return sameProductBatches.reduce((sum, b) => sum + (b.availableQuantity || 0), 0);
+  }, [sameProductBatches]);
+
+  // Overall KPIs
+  const totalPhysicalStock = useMemo(() => batches.reduce((sum, b) => sum + (b.availableQuantity || 0), 0), [batches]);
+  const totalReservedStock = useMemo(() => batches.reduce((sum, b) => sum + (b.reservedQuantity || 0), 0), [batches]);
+  const expiringSoonCount = useMemo(() => batches.filter(b => classifyExpiry(b.expiryDate) === 'EXPIRING_SOON' && b.status !== 'DEPLETED').length, [batches]);
+  const expiredCount = useMemo(() => batches.filter(b => classifyExpiry(b.expiryDate) === 'EXPIRED' && b.status !== 'DEPLETED').length, [batches]);
+
+  if (loading && batches.length === 0) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '5rem' }}>
+        <Loader2 size={36} color="var(--brand-500)" style={{ animation: 'spin 1s linear infinite' }} />
+      </div>
+    );
+  }
 
   return (
-    <div style={styles.container}>
-      {/* Header */}
-      <div style={styles.header}>
+    <div className="workspace-container">
+      {/* Top Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h2 style={styles.title}>Batch Inventory & FEFO Engine</h2>
-          <p style={styles.subtitle}>
-            Track production lots, expiry timelines, and auto-allocate stock using FEFO rules.
+          <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0 }}>
+            Batch Inventory & FEFO Allocation Engine
+          </h2>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+            Production lot tracking, shelf life radar, automated First-Expire-First-Out allocations, and physical stock reconciliation.
           </p>
         </div>
+
         {canAdjust && (
           <button
             onClick={() => {
               setBatchForm({
                 productId: products.length > 0 ? products[0].id : '',
-                batchNumber: '',
-                manufacturingDate: '',
-                expiryDate: '',
-                initialQuantity: '',
+                batchNumber: '', manufacturingDate: '', expiryDate: '', initialQuantity: '',
               });
               setShowAddBatchModal(true);
             }}
-            style={styles.addBtn}
+            className="btn btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
-            <Plus size={16} /> Initial Batch Entry
+            <Plus size={16} /> New Batch Production Lot
           </button>
         )}
       </div>
 
-      {/* Sub Tabs */}
-      <div style={styles.tabsContainer}>
-        {[
-          { key: 'batches', label: `Batch Quantities (${batches.length})` },
-          { key: 'ledger',  label: `Stock Ledger (${movements.length})` },
-          { key: 'expiry',  label: 'Expiry Dashboard' },
-          { key: 'fefo',    label: 'FEFO Allocation' },
-        ].map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setActiveSubTab(key)}
-            style={{
-              ...styles.tab,
-              borderBottom: activeSubTab === key ? '2px solid #10b981' : '2px solid transparent',
-              color: activeSubTab === key ? '#10b981' : '#94a3b8',
-            }}
-          >
-            {label}
-          </button>
-        ))}
+      {/* KPI Overview Strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Total Available Stock
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: 'var(--brand-400)', fontFamily: 'var(--font-mono)' }}>
+            {totalPhysicalStock.toLocaleString()}
+          </p>
+        </div>
+
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Stock Reserved on Orders
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: 'var(--status-info)', fontFamily: 'var(--font-mono)' }}>
+            {totalReservedStock.toLocaleString()}
+          </p>
+        </div>
+
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Lots Expiring Soon (&le;30d)
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: expiringSoonCount > 0 ? 'var(--status-warning)' : 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+            {expiringSoonCount}
+          </p>
+        </div>
+
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Expired Lots Blocked
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: expiredCount > 0 ? 'var(--status-danger)' : 'var(--status-success)', fontFamily: 'var(--font-mono)' }}>
+            {expiredCount}
+          </p>
+        </div>
       </div>
 
-      {/* Content */}
-      {loading ? (
-        <div style={styles.loadingState}>
-          <Loader2 size={36} style={styles.spinner} />
-          <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Loading inventory records...</p>
-        </div>
-      ) : activeSubTab === 'batches' ? (
-        /* ── Batches Table ── */
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={styles.cardHeader}>
-            <Boxes size={18} color="#10b981" />
-            <h3 style={styles.cardTitle}>Batch Quantities Log</h3>
+      {/* Sub Tabs */}
+      <div className="context-nav-tabs" style={{ maxWidth: '640px' }}>
+        <button
+          type="button"
+          className={`context-nav-tab ${activeSubTab === 'batches' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('batches')}
+        >
+          <Boxes size={14} /> Batch Quantities ({batches.length})
+        </button>
+
+        <button
+          type="button"
+          className={`context-nav-tab ${activeSubTab === 'expiry' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('expiry')}
+        >
+          <ShieldAlert size={14} /> Expiry Radar
+        </button>
+
+        <button
+          type="button"
+          className={`context-nav-tab ${activeSubTab === 'fefo' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('fefo')}
+        >
+          <Zap size={14} /> FEFO Simulator
+        </button>
+
+        <button
+          type="button"
+          className={`context-nav-tab ${activeSubTab === 'ledger' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('ledger')}
+        >
+          <History size={14} /> Movements Ledger ({movements.length})
+        </button>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 1: BATCH QUANTITIES (Interactive with Context Drawer)
+          ───────────────────────────────────────────────────────────── */}
+      {activeSubTab === 'batches' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Filter Bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+              <Search size={14} color="var(--text-tertiary)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Search by Batch #, Product, or SKU..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ paddingLeft: '34px', fontSize: '13px' }}
+              />
+            </div>
+
+            <select className="form-select" value={productFilter} onChange={e => setProductFilter(e.target.value)} style={{ minWidth: '180px', fontSize: '13px' }}>
+              <option value="ALL">All Products ({products.length})</option>
+              {products.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+
+            <select className="form-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ minWidth: '160px', fontSize: '13px' }}>
+              <option value="ALL">All Lot Statuses</option>
+              <option value="AVAILABLE">Available</option>
+              <option value="EXPIRING_SOON">Expiring Soon</option>
+              <option value="EXPIRED">Expired</option>
+              <option value="DEPLETED">Depleted</option>
+            </select>
           </div>
-          {batches.length === 0 ? (
-            <div style={styles.emptyState}>
-              <Boxes size={40} color="#475569" style={{ marginBottom: '0.75rem' }} />
-              <p style={{ color: '#94a3b8', fontSize: '0.8125rem' }}>No batch inventory logged.</p>
+
+          {/* Batches Table */}
+          {filteredBatches.length === 0 ? (
+            <div className="card" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+              <Boxes size={40} style={{ marginBottom: '8px' }} />
+              <h4 style={{ margin: 0, color: 'var(--text-primary)' }}>No Batches Found</h4>
+              <p style={{ margin: '4px 0 0', fontSize: '13px' }}>No production lots match active filters.</p>
             </div>
           ) : (
-            <table style={styles.table}>
-              <thead>
-                <tr style={styles.theadRow}>
-                  <th style={styles.th}>Batch Number</th>
-                  <th style={styles.th}>Product</th>
-                  <th style={styles.th}>Mfg Date</th>
-                  <th style={styles.th}>Expiry Date</th>
-                  <th style={styles.th}>Available</th>
-                  <th style={styles.th}>Reserved</th>
-                  <th style={styles.th}>Status</th>
-                  {canAdjust && <th style={{ ...styles.th, textAlign: 'right' }}>Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {batches.map((b) => (
-                  <tr key={b.id} style={styles.tr}>
-                    <td style={{ ...styles.td, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{b.batchNumber}</td>
-                    <td style={styles.td}>
-                      <div style={{ fontWeight: 600, color: '#f8fafc' }}>{b.product.name}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'var(--font-mono)' }}>{b.product.sku}</div>
-                    </td>
-                    <td style={styles.td}>{new Date(b.manufacturingDate).toLocaleDateString()}</td>
-                    <td style={styles.td}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                        <Calendar size={14} color="#94a3b8" /> {new Date(b.expiryDate).toLocaleDateString()}
-                      </div>
-                    </td>
-                    <td style={{ ...styles.td, color: '#10b981', fontWeight: 700 }}>
-                      {b.availableQuantity.toLocaleString()} {b.product.unit}
-                    </td>
-                    <td style={{ ...styles.td, color: b.reservedQuantity > 0 ? '#f59e0b' : '#94a3b8' }}>
-                      {b.reservedQuantity.toLocaleString()} {b.product.unit}
-                    </td>
-                    <td style={styles.td}>
-                      <ExpiryBadge status={b.status} expiryDate={b.expiryDate} />
-                    </td>
-                    {canAdjust && (
-                      <td style={{ ...styles.td, textAlign: 'right' }}>
-                        <button onClick={() => openAdjustModal(b)} style={styles.adjustBtn}>
-                          <Sliders size={12} /> Adjust
-                        </button>
-                      </td>
-                    )}
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Batch Number</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Product & SKU</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Mfg Date</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Expiry Date</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Available Stock</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Reserved</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Status</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      ) : activeSubTab === 'ledger' ? (
-        /* ── Stock Movements Ledger ── */
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={styles.cardHeader}>
-            <History size={18} color="#10b981" />
-            <h3 style={styles.cardTitle}>Inventory Audit History Ledger</h3>
-          </div>
-          {movements.length === 0 ? (
-            <div style={styles.emptyState}>
-              <History size={40} color="#475569" style={{ marginBottom: '0.75rem' }} />
-              <p style={{ color: '#94a3b8', fontSize: '0.8125rem' }}>No stock movements recorded yet.</p>
-            </div>
-          ) : (
-            <table style={styles.table}>
-              <thead>
-                <tr style={styles.theadRow}>
-                  <th style={styles.th}>Timestamp</th>
-                  <th style={styles.th}>Product</th>
-                  <th style={styles.th}>Batch Number</th>
-                  <th style={styles.th}>Type</th>
-                  <th style={styles.th}>Quantity</th>
-                  <th style={styles.th}>Reason</th>
-                  <th style={styles.th}>Logged By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movements.map((m) => {
-                  const isPositive = ['STOCK_IN', 'ADJUSTMENT_IN', 'RELEASE'].includes(m.type);
-                  const isWarning = m.type === 'RESERVATION';
-                  const badgeClass = isPositive ? 'badge-success' : isWarning ? 'badge-warning' : 'badge-danger';
-                  return (
-                    <tr key={m.id} style={styles.tr}>
-                      <td style={styles.td}>{new Date(m.createdAt).toLocaleString()}</td>
-                      <td style={styles.td}>
-                        <div style={{ fontWeight: 600, color: '#f8fafc' }}>{m.product.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'var(--font-mono)' }}>{m.product.sku}</div>
+                </thead>
+                <tbody>
+                  {filteredBatches.map(b => (
+                    <tr
+                      key={b.id}
+                      onClick={() => setInspectBatch(b)}
+                      style={{ borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', transition: 'background-color 0.15s ease' }}
+                    >
+                      <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--status-info)' }}>
+                        {b.batchNumber}
                       </td>
-                      <td style={{ ...styles.td, fontFamily: 'var(--font-mono)' }}>{m.batch.batchNumber}</td>
-                      <td style={styles.td}>
-                        <span className={`badge ${badgeClass}`}>{m.type.replace('_', ' ')}</span>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{b.product?.name}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{b.product?.sku}</div>
                       </td>
-                      <td style={{ ...styles.td, fontWeight: 700, color: isPositive ? '#10b981' : '#f87171' }}>
-                        {isPositive ? '+' : '-'}{m.quantity.toLocaleString()}
+                      <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>
+                        {new Date(b.manufacturingDate).toLocaleDateString('en-IN')}
                       </td>
-                      <td style={styles.td}>{m.reason || <em style={{ color: '#475569' }}>Manual Entry</em>}</td>
-                      <td style={styles.td}>{m.user?.name || <span style={{ color: '#475569' }}>System</span>}</td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Calendar size={13} color="var(--text-tertiary)" />
+                          <span>{new Date(b.expiryDate).toLocaleDateString('en-IN')}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '12px 16px', fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--brand-400)' }}>
+                        {Number(b.availableQuantity).toLocaleString()} {b.product?.unit}
+                      </td>
+                      <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', color: b.reservedQuantity > 0 ? 'var(--status-warning)' : 'var(--text-tertiary)' }}>
+                        {Number(b.reservedQuantity).toLocaleString()} {b.product?.unit}
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <ExpiryBadge status={b.status} expiryDate={b.expiryDate} />
+                      </td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                          <button
+                            onClick={() => setInspectBatch(b)}
+                            className="btn btn-secondary btn-icon"
+                            title="Inspect Batch Context"
+                          >
+                            <Eye size={13} />
+                          </button>
+                          {canAdjust && (
+                            <button
+                              onClick={() => openAdjustModal(b)}
+                              className="btn btn-secondary btn-sm"
+                              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}
+                            >
+                              <Sliders size={12} /> Adjust
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
-      ) : activeSubTab === 'expiry' ? (
-        /* ── Expiry Dashboard Tab ── */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          {/* Header row with Sync button */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 2: EXPIRY RADAR (Alerts & Automated Synchronization)
+          ───────────────────────────────────────────────────────────── */}
+      {activeSubTab === 'expiry' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Sync Header */}
+          <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', padding: '16px 20px' }}>
             <div>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc', marginBottom: '0.25rem' }}>
-                Expiry Status Dashboard
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                Automated Shelf-Life Sync & Compliance
               </h3>
-              <p style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
-                Real-time classification of batch inventory by expiry proximity.
+              <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                System marks lots EXPIRED when date is past and EXPIRING_SOON within 30 days. Expired lots are automatically blocked from FEFO sales order allocation.
               </p>
             </div>
             {canAdjust && (
-              <button onClick={handleSyncExpiry} disabled={syncLoading} style={styles.syncBtn}>
-                {syncLoading ? <Loader2 size={14} style={styles.spinner} /> : <RefreshCw size={14} />}
-                {syncLoading ? 'Syncing...' : 'Sync Expiry Status'}
+              <button onClick={handleSyncExpiry} disabled={syncLoading} className="btn btn-primary btn-sm">
+                {syncLoading ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={14} />}
+                Run Live Expiry Audit Sync
               </button>
             )}
           </div>
 
-          {/* KPI Summary Cards */}
-          {expiryLoading ? (
-            <div style={styles.loadingState}>
-              <Loader2 size={28} style={styles.spinner} />
-              <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Loading expiry data...</p>
-            </div>
-          ) : expiryDashboard ? (
-            <>
-              <div style={styles.kpiGrid}>
-                {/* Expired */}
-                <div style={{ ...styles.kpiCard, borderColor: 'rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.05)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
-                    <div style={{ ...styles.kpiIcon, background: 'rgba(239, 68, 68, 0.15)' }}>
-                      <XCircle size={18} color="#ef4444" />
-                    </div>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#94a3b8' }}>Expired Batches</span>
-                  </div>
-                  <div style={{ ...styles.kpiValue, color: '#ef4444' }}>{expiryDashboard.summary.expired.count}</div>
-                  <div style={styles.kpiSub}>
-                    {expiryDashboard.summary.expired.totalQuantity.toLocaleString()} units total
-                  </div>
-                </div>
-
-                {/* Expiring Soon */}
-                <div style={{ ...styles.kpiCard, borderColor: 'rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.05)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
-                    <div style={{ ...styles.kpiIcon, background: 'rgba(245, 158, 11, 0.15)' }}>
-                      <AlertTriangle size={18} color="#f59e0b" />
-                    </div>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#94a3b8' }}>Expiring Soon (≤30d)</span>
-                  </div>
-                  <div style={{ ...styles.kpiValue, color: '#f59e0b' }}>{expiryDashboard.summary.expiringSoon.count}</div>
-                  <div style={styles.kpiSub}>
-                    {expiryDashboard.summary.expiringSoon.totalQuantity.toLocaleString()} units at risk
-                  </div>
-                </div>
-
-                {/* Normal / Available */}
-                <div style={{ ...styles.kpiCard, borderColor: 'rgba(16, 185, 129, 0.3)', background: 'rgba(16, 185, 129, 0.05)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
-                    <div style={{ ...styles.kpiIcon, background: 'rgba(16, 185, 129, 0.15)' }}>
-                      <CheckCircle2 size={18} color="#10b981" />
-                    </div>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#94a3b8' }}>Normal Stock</span>
-                  </div>
-                  <div style={{ ...styles.kpiValue, color: '#10b981' }}>{expiryDashboard.summary.normal.count}</div>
-                  <div style={styles.kpiSub}>
-                    {expiryDashboard.summary.normal.totalQuantity.toLocaleString()} units healthy
-                  </div>
-                </div>
-
-                {/* Total Batches */}
-                <div style={{ ...styles.kpiCard, borderColor: 'rgba(99, 102, 241, 0.3)', background: 'rgba(99, 102, 241, 0.05)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
-                    <div style={{ ...styles.kpiIcon, background: 'rgba(99, 102, 241, 0.15)' }}>
-                      <BarChart3 size={18} color="#6366f1" />
-                    </div>
-                    <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#94a3b8' }}>Total Batches</span>
-                  </div>
-                  <div style={{ ...styles.kpiValue, color: '#6366f1' }}>{expiryDashboard.totalBatches}</div>
-                  <div style={styles.kpiSub}>across all products</div>
-                </div>
+          {/* Expiry Breakdown Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+            {/* Urgent: Expired */}
+            <div className="card" style={{ borderLeft: '4px solid var(--status-danger)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <XCircle size={18} color="var(--status-danger)" />
+                <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--status-danger)' }}>
+                  Expired Lots (Blocked)
+                </h4>
               </div>
-
-              {/* Per-Product Breakdown Table */}
-              {expiryDashboard.byProduct.length > 0 && (
-                <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                  <div style={styles.cardHeader}>
-                    <TrendingDown size={18} color="#f59e0b" />
-                    <h3 style={styles.cardTitle}>Per-Product Expiry Breakdown</h3>
-                  </div>
-                  <table style={styles.table}>
+              <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                These batches cannot be confirmed for distributor fulfillment.
+              </p>
+              {batches.filter(b => classifyExpiry(b.expiryDate) === 'EXPIRED' && b.status !== 'DEPLETED').length === 0 ? (
+                <div style={{ padding: '10px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', fontSize: '12px', color: 'var(--status-success)' }}>
+                  ✓ No expired lots present in inventory.
+                </div>
+              ) : (
+                <div className="context-table-wrap">
+                  <table className="context-table">
                     <thead>
-                      <tr style={styles.theadRow}>
-                        <th style={styles.th}>Product</th>
-                        <th style={styles.th}>SKU</th>
-                        <th style={{ ...styles.th, color: '#ef4444' }}>Expired (qty)</th>
-                        <th style={{ ...styles.th, color: '#f59e0b' }}>Expiring Soon (qty)</th>
-                        <th style={{ ...styles.th, color: '#10b981' }}>Normal (qty)</th>
-                        <th style={styles.th}>Total Available</th>
+                      <tr>
+                        <th>Batch #</th>
+                        <th>Product</th>
+                        <th style={{ textAlign: 'right' }}>Qty</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {expiryDashboard.byProduct.map((row) => (
-                        <tr key={row.productId} style={styles.tr}>
-                          <td style={{ ...styles.td, fontWeight: 600, color: '#f8fafc' }}>{row.productName}</td>
-                          <td style={{ ...styles.td, fontFamily: 'var(--font-mono)', color: '#64748b' }}>{row.sku}</td>
-                          <td style={{ ...styles.td, color: row.expired > 0 ? '#ef4444' : '#475569', fontWeight: row.expired > 0 ? 700 : 400 }}>
-                            {row.expired > 0 ? `⚠ ${row.expired.toLocaleString()} ${row.unit}` : '—'}
-                          </td>
-                          <td style={{ ...styles.td, color: row.expiringSoon > 0 ? '#f59e0b' : '#475569', fontWeight: row.expiringSoon > 0 ? 700 : 400 }}>
-                            {row.expiringSoon > 0 ? `${row.expiringSoon.toLocaleString()} ${row.unit}` : '—'}
-                          </td>
-                          <td style={{ ...styles.td, color: '#10b981' }}>
-                            {row.normal.toLocaleString()} {row.unit}
-                          </td>
-                          <td style={{ ...styles.td, fontWeight: 700, color: '#cbd5e1' }}>
-                            {row.totalAvailable.toLocaleString()} {row.unit}
-                          </td>
+                      {batches.filter(b => classifyExpiry(b.expiryDate) === 'EXPIRED' && b.status !== 'DEPLETED').map(b => (
+                        <tr key={b.id} onClick={() => setInspectBatch(b)} style={{ cursor: 'pointer' }}>
+                          <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--status-danger)', fontWeight: 700 }}>{b.batchNumber}</td>
+                          <td>{b.product?.name}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700 }}>{b.availableQuantity.toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               )}
-            </>
-          ) : (
-            <div style={styles.emptyState}>
-              <BarChart3 size={40} color="#475569" style={{ marginBottom: '0.75rem' }} />
-              <p style={{ color: '#94a3b8', fontSize: '0.8125rem' }}>No expiry data available yet.</p>
             </div>
-          )}
-        </div>
-      ) : (
-        /* ── FEFO Allocation Tab ── */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc', marginBottom: '0.25rem' }}>
-              FEFO Allocation Preview
-            </h3>
-            <p style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
-              Non-mutating simulation — calculates which batches would be consumed in First Expire, First Out order for a given product and quantity.
-            </p>
+
+            {/* Warning: Expiring Soon */}
+            <div className="card" style={{ borderLeft: '4px solid var(--status-warning)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <AlertTriangle size={18} color="var(--status-warning)" />
+                <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--status-warning)' }}>
+                  Expiring in &le; 30 Days (High Priority FEFO)
+                </h4>
+              </div>
+              <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                Allocated first under the FEFO algorithm to minimize expiration loss.
+              </p>
+              {batches.filter(b => classifyExpiry(b.expiryDate) === 'EXPIRING_SOON' && b.status !== 'DEPLETED').length === 0 ? (
+                <div style={{ padding: '10px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', fontSize: '12px', color: 'var(--status-success)' }}>
+                  ✓ No lots expiring within the next 30 days.
+                </div>
+              ) : (
+                <div className="context-table-wrap">
+                  <table className="context-table">
+                    <thead>
+                      <tr>
+                        <th>Batch #</th>
+                        <th>Product</th>
+                        <th>Days Left</th>
+                        <th style={{ textAlign: 'right' }}>Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {batches.filter(b => classifyExpiry(b.expiryDate) === 'EXPIRING_SOON' && b.status !== 'DEPLETED').map(b => {
+                        const daysLeft = Math.ceil((new Date(b.expiryDate) - new Date()) / (1000 * 60 * 60 * 24));
+                        return (
+                          <tr key={b.id} onClick={() => setInspectBatch(b)} style={{ cursor: 'pointer' }}>
+                            <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--status-warning)' }}>{b.batchNumber}</td>
+                            <td>{b.product?.name}</td>
+                            <td><span className="badge badge-warning" style={{ fontSize: '10px' }}>{daysLeft}d</span></td>
+                            <td style={{ textAlign: 'right', fontWeight: 700 }}>{b.availableQuantity.toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
+        </div>
+      )}
 
-          {/* FEFO Input Panel */}
-          <div className="card" style={{ maxWidth: '540px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem', paddingBottom: '0.75rem', borderBottom: '1px solid #1e293b' }}>
-              <Zap size={18} color="#3b82f6" />
-              <h3 style={styles.cardTitle}>Configure Allocation Query</h3>
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 3: FEFO ALLOCATION SIMULATOR
+          ───────────────────────────────────────────────────────────── */}
+      {activeSubTab === 'fefo' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(0, 1.6fr)', gap: '20px', alignItems: 'start' }}>
+          {/* Simulator Form */}
+          <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Zap size={20} color="#f59e0b" />
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  FEFO Allocation Simulator
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Test how the warehouse allocation engine distributes order quantities across batches.
+                </p>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Product <span style={{ color: '#ef4444' }}>*</span></label>
+            <form onSubmit={handleFEFOPreview} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="form-group">
+                <label className="form-label">Fertilizer Product</label>
                 <select
-                  style={styles.select}
+                  className="form-select"
                   value={fefoProductId}
-                  onChange={(e) => { setFefoProductId(e.target.value); setFefoResult(null); }}
+                  onChange={e => setFefoProductId(e.target.value)}
                 >
-                  <option value="">Select product...</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
+                  {products.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.unit})</option>
                   ))}
                 </select>
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Requested Quantity <span style={{ color: '#ef4444' }}>*</span></label>
+              <div className="form-group">
+                <label className="form-label">Simulated Order Quantity</label>
                 <input
+                  className="form-input"
                   type="number"
-                  value={fefoQty}
                   min="1"
-                  step="1"
-                  onChange={(e) => { setFefoQty(Number(e.target.value)); setFefoResult(null); }}
-                  style={styles.input}
+                  step="any"
+                  value={fefoQty}
+                  onChange={e => setFefoQty(e.target.value)}
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', fontWeight: 700 }}
                 />
               </div>
 
-              <button onClick={handleFEFOPreview} disabled={fefoLoading} style={styles.allocateBtn}>
-                {fefoLoading ? (
-                  <><Loader2 size={14} style={{ ...styles.spinner, display: 'inline-block' }} /> Running FEFO Preview...</>
-                ) : (
-                  <><Play size={14} /> Run FEFO Preview</>
-                )}
+              <button type="submit" disabled={fefoLoading} className="btn btn-primary" style={{ marginTop: '4px' }}>
+                {fefoLoading ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={15} />}
+                Run FEFO Allocation Preview
+              </button>
+            </form>
+          </div>
+
+          {/* Allocation Results */}
+          <div className="card" style={{ padding: '20px', minHeight: '300px' }}>
+            {!fefoResult ? (
+              <div className="context-empty" style={{ padding: '4rem 1rem' }}>
+                <Zap size={36} color="var(--text-tertiary)" />
+                <h4 style={{ margin: 0, color: 'var(--text-primary)' }}>Awaiting Simulation Parameters</h4>
+                <p style={{ margin: 0, fontSize: '12px' }}>
+                  Select a product, enter a test volume, and click "Run FEFO Allocation Preview".
+                </p>
+              </div>
+            ) : (
+              <div>
+                {/* Result Gate */}
+                <div style={{
+                  padding: '12px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  border: `1px solid ${fefoResult.canFulfill ? 'var(--status-success)' : 'var(--status-danger)'}`,
+                  background: fefoResult.canFulfill ? 'var(--status-success-bg)' : 'var(--status-danger-bg)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginBottom: '16px'
+                }}>
+                  {fefoResult.canFulfill
+                    ? <CheckCircle2 size={22} color="var(--status-success)" />
+                    : <XCircle size={22} color="var(--status-danger)" />
+                  }
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: fefoResult.canFulfill ? 'var(--status-success)' : 'var(--status-danger)' }}>
+                      {fefoResult.canFulfill ? 'Order Fully Fulfillable via FEFO' : 'Stock Shortage Detected'}
+                    </h4>
+                    <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      Requested: {Number(fefoResult.totalRequested).toLocaleString()} • Allocated: {Number(fefoResult.totalAllocated).toLocaleString()} {fefoResult.shortage > 0 && `• Shortage: ${Number(fefoResult.shortage).toLocaleString()}`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Proposed Allocation Table */}
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Proposed FEFO Batch Dispatch Sequence
+                </span>
+
+                <div className="context-table-wrap" style={{ marginTop: '8px' }}>
+                  <table className="context-table">
+                    <thead>
+                      <tr>
+                        <th>Batch #</th>
+                        <th>Expiry Date</th>
+                        <th>Available in Lot</th>
+                        <th style={{ textAlign: 'right' }}>Simulated Allocation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fefoResult.allocations?.map((al, idx) => (
+                        <tr key={al.batchId || idx}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--status-info)' }}>
+                            {al.batchNumber}
+                          </td>
+                          <td>{new Date(al.expiryDate).toLocaleDateString('en-IN')}</td>
+                          <td>{Number(al.availableQuantity).toLocaleString()}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--brand-400)', fontFamily: 'var(--font-mono)' }}>
+                            {Number(al.allocatedQuantity).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 4: STOCK MOVEMENTS AUDIT LEDGER
+          ───────────────────────────────────────────────────────────── */}
+      {activeSubTab === 'ledger' && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border-subtle)' }}>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Timestamp</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Product</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Batch #</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Movement Type</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Quantity</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Reason / Ref</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movements.map(m => (
+                <tr key={m.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>
+                    {new Date(m.createdAt).toLocaleString('en-IN')}
+                  </td>
+                  <td style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {m.product?.name}
+                  </td>
+                  <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', color: 'var(--status-info)' }}>
+                    {m.batch?.batchNumber || '—'}
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    <span className={`badge ${
+                      m.type === 'STOCK_IN' || m.type === 'ADJUSTMENT_IN' ? 'badge-success' :
+                      m.type === 'DISPATCH' || m.type === 'ADJUSTMENT_OUT' ? 'badge-danger' : 'badge-warning'
+                    }`}>
+                      {m.type}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                    {m.quantity > 0 ? `+${m.quantity.toLocaleString()}` : m.quantity.toLocaleString()}
+                  </td>
+                  <td style={{ padding: '12px 16px', color: 'var(--text-tertiary)' }}>
+                    {m.reason || m.referenceType || '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          BATCH CONTEXT INSPECTION FLYOUT DRAWER
+          ───────────────────────────────────────────────────────────── */}
+      {inspectBatch && (
+        <div className="context-flyout-overlay" onClick={() => setInspectBatch(null)}>
+          <div className="context-flyout-panel" onClick={e => e.stopPropagation()}>
+            <div className="context-flyout-header">
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Batch Lot {inspectBatch.batchNumber}
+                  </h3>
+                  <ExpiryBadge status={inspectBatch.status} expiryDate={inspectBatch.expiryDate} />
+                </div>
+                <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                  Production lot for {inspectBatch.product?.name} ({inspectBatch.product?.sku})
+                </p>
+              </div>
+              <button onClick={() => setInspectBatch(null)} className="btn btn-ghost btn-icon">
+                <X size={18} />
               </button>
             </div>
-          </div>
 
-          {/* FEFO Results */}
-          {fefoResult && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {/* Status Banner */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
-                padding: '1rem 1.25rem',
-                borderRadius: '10px',
-                border: `1px solid ${fefoResult.canFulfill ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
-                backgroundColor: fefoResult.canFulfill ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)',
-              }}>
-                {fefoResult.canFulfill
-                  ? <CheckCircle2 size={22} color="#10b981" />
-                  : <ShieldAlert size={22} color="#ef4444" />
-                }
-                <div>
-                  <div style={{ fontWeight: 700, color: fefoResult.canFulfill ? '#10b981' : '#ef4444', fontSize: '0.9375rem' }}>
-                    {fefoResult.canFulfill ? 'Order Can Be Fulfilled' : 'Insufficient Stock — Cannot Fulfill'}
-                  </div>
-                  <div style={{ fontSize: '0.8125rem', color: '#94a3b8', marginTop: '0.125rem' }}>
-                    Product: <strong style={{ color: '#cbd5e1' }}>{fefoResult.product.name}</strong>
-                    &nbsp;|&nbsp; Requested: <strong style={{ color: '#cbd5e1' }}>{fefoResult.requestedQuantity.toLocaleString()} {fefoResult.product.unit}</strong>
-                    &nbsp;|&nbsp; Available: <strong style={{ color: '#10b981' }}>{fefoResult.totalAvailable.toLocaleString()} {fefoResult.product.unit}</strong>
-                    {!fefoResult.canFulfill && (
-                      <>&nbsp;|&nbsp; Shortage: <strong style={{ color: '#ef4444' }}>{fefoResult.shortage.toLocaleString()} {fefoResult.product.unit}</strong></>
-                    )}
-                  </div>
+            <div className="context-flyout-body">
+              {/* Product Identity Card */}
+              <div style={{ padding: '14px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <span className="context-kpi-label">Associated Fertilizer Product</span>
+                <h4 style={{ margin: '2px 0 0', fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {inspectBatch.product?.name}
+                </h4>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  <span>SKU: <strong style={{ color: 'var(--brand-400)', fontFamily: 'var(--font-mono)' }}>{inspectBatch.product?.sku}</strong></span>
+                  <span>• Unit: {inspectBatch.product?.unit}</span>
+                  <span>• Total Product Stock Across Lots: <strong>{inspectedProductTotalAvailable.toLocaleString()} {inspectBatch.product?.unit}</strong></span>
                 </div>
               </div>
 
-              {/* Allocation Table */}
-              {fefoResult.allocations.length > 0 && (
-                <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                  <div style={styles.cardHeader}>
-                    <Boxes size={18} color="#3b82f6" />
-                    <h3 style={styles.cardTitle}>Proposed Batch Allocation Plan (FEFO Order)</h3>
-                  </div>
-                  <table style={styles.table}>
-                    <thead>
-                      <tr style={styles.theadRow}>
-                        <th style={styles.th}>#</th>
-                        <th style={styles.th}>Batch Number</th>
-                        <th style={styles.th}>Expiry Date</th>
-                        <th style={styles.th}>Days Until Expiry</th>
-                        <th style={styles.th}>Batch Status</th>
-                        <th style={styles.th}>Available in Batch</th>
-                        <th style={{ ...styles.th, color: '#3b82f6' }}>Allocated Quantity</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {fefoResult.allocations.map((alloc, i) => (
-                        <tr key={alloc.batchId} style={styles.tr}>
-                          <td style={{ ...styles.td, color: '#475569', fontFamily: 'var(--font-mono)' }}>{i + 1}</td>
-                          <td style={{ ...styles.td, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{alloc.batchNumber}</td>
-                          <td style={styles.td}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                              <Calendar size={13} color="#94a3b8" />
-                              {new Date(alloc.expiryDate).toLocaleDateString()}
-                            </div>
-                          </td>
-                          <td style={{ ...styles.td, color: alloc.daysUntilExpiry <= 30 ? '#f59e0b' : '#10b981', fontWeight: 700 }}>
-                            {alloc.daysUntilExpiry} days
-                          </td>
-                          <td style={styles.td}>
-                            <span className={`badge ${alloc.expiryStatus === 'EXPIRING_SOON' ? 'badge-warning' : 'badge-success'}`}>
-                              {alloc.expiryStatus === 'EXPIRING_SOON' ? 'Expiring Soon' : 'Available'}
-                            </span>
-                          </td>
-                          <td style={{ ...styles.td, color: '#94a3b8' }}>
-                            {alloc.availableQuantity.toLocaleString()} {fefoResult.product.unit}
-                          </td>
-                          <td style={{ ...styles.td, color: '#3b82f6', fontWeight: 700, fontSize: '0.9375rem' }}>
-                            {alloc.allocatedQuantity.toLocaleString()} {fefoResult.product.unit}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr style={{ backgroundColor: '#0f172a', borderTop: '2px solid #1e293b' }}>
-                        <td colSpan={6} style={{ ...styles.td, fontWeight: 700, color: '#94a3b8', textAlign: 'right' }}>
-                          Total Allocated:
-                        </td>
-                        <td style={{ ...styles.td, fontWeight: 800, color: '#3b82f6', fontSize: '1rem' }}>
-                          {fefoResult.allocations
-                            .reduce((sum, a) => sum + a.allocatedQuantity, 0)
-                            .toLocaleString()}{' '}
-                          {fefoResult.product.unit}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+              {/* Lot Shelf Life Snapshot */}
+              <div className="context-kpi-grid">
+                <div className="context-kpi-cell">
+                  <span className="context-kpi-label">Available Physical Qty</span>
+                  <span className="context-kpi-val" style={{ color: 'var(--brand-400)' }}>
+                    {inspectBatch.availableQuantity.toLocaleString()} {inspectBatch.product?.unit}
+                  </span>
                 </div>
+                <div className="context-kpi-cell">
+                  <span className="context-kpi-label">Reserved on Confirmed SO</span>
+                  <span className="context-kpi-val" style={{ color: inspectBatch.reservedQuantity > 0 ? 'var(--status-warning)' : 'var(--text-secondary)' }}>
+                    {inspectBatch.reservedQuantity.toLocaleString()} {inspectBatch.product?.unit}
+                  </span>
+                </div>
+                <div className="context-kpi-cell">
+                  <span className="context-kpi-label">Manufacturing Date</span>
+                  <span className="context-kpi-val" style={{ fontSize: '13px' }}>
+                    {new Date(inspectBatch.manufacturingDate).toLocaleDateString('en-IN')}
+                  </span>
+                </div>
+                <div className="context-kpi-cell">
+                  <span className="context-kpi-label">Expiration Date</span>
+                  <span className="context-kpi-val" style={{ fontSize: '13px' }}>
+                    {new Date(inspectBatch.expiryDate).toLocaleDateString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Stock Movements for this batch */}
+              <div>
+                <span style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 700, letterSpacing: '0.04em' }}>
+                  Batch Movement Audit History ({inspectedBatchMovements.length})
+                </span>
+
+                {inspectedBatchMovements.length === 0 ? (
+                  <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                    No separate manual adjustments or reservations logged for this batch lot.
+                  </p>
+                ) : (
+                  <div className="context-table-wrap" style={{ marginTop: '6px' }}>
+                    <table className="context-table">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Type</th>
+                          <th>Qty</th>
+                          <th>Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inspectedBatchMovements.map(m => (
+                          <tr key={m.id}>
+                            <td>{new Date(m.createdAt).toLocaleDateString('en-IN')}</td>
+                            <td><span className="badge badge-info" style={{ fontSize: '9.5px' }}>{m.type}</span></td>
+                            <td style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{m.quantity.toLocaleString()}</td>
+                            <td style={{ color: 'var(--text-tertiary)' }}>{m.reason || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="context-flyout-footer">
+              {canAdjust && (
+                <button onClick={() => openAdjustModal(inspectBatch)} className="btn btn-primary">
+                  <Sliders size={14} /> Adjust Batch Stock
+                </button>
               )}
             </div>
-          )}
-        </div>
-      )}
-
-      {/* ══ ADD BATCH MODAL ══════════════════════════════════════════════════════ */}
-      {showAddBatchModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modalCard}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Initial Batch Inventory Entry</h3>
-              <button onClick={() => setShowAddBatchModal(false)} style={styles.closeBtn}><X size={18} /></button>
-            </div>
-            <form onSubmit={handleAddBatch} style={styles.form}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Product <span style={{ color: '#ef4444' }}>*</span></label>
-                <select
-                  style={styles.select}
-                  value={batchForm.productId}
-                  onChange={(e) => setBatchForm((prev) => ({ ...prev, productId: e.target.value }))}
-                  required
-                >
-                  <option value="" disabled>Select Product Profile</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={styles.formRow}>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>Batch Number <span style={{ color: '#ef4444' }}>*</span></label>
-                  <input
-                    type="text"
-                    style={styles.input}
-                    placeholder="e.g. BAT-2026-N1"
-                    value={batchForm.batchNumber}
-                    onChange={(e) => setBatchForm((prev) => ({ ...prev, batchNumber: e.target.value }))}
-                    required
-                  />
-                </div>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>Initial Quantity <span style={{ color: '#ef4444' }}>*</span></label>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    style={styles.input}
-                    placeholder="0.00"
-                    value={batchForm.initialQuantity}
-                    onChange={(e) => setBatchForm((prev) => ({ ...prev, initialQuantity: e.target.value }))}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div style={styles.formRow}>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>Manufacturing Date <span style={{ color: '#ef4444' }}>*</span></label>
-                  <input
-                    type="date"
-                    style={styles.input}
-                    value={batchForm.manufacturingDate}
-                    onChange={(e) => setBatchForm((prev) => ({ ...prev, manufacturingDate: e.target.value }))}
-                    required
-                  />
-                </div>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>Expiry Date <span style={{ color: '#ef4444' }}>*</span></label>
-                  <input
-                    type="date"
-                    style={styles.input}
-                    value={batchForm.expiryDate}
-                    onChange={(e) => setBatchForm((prev) => ({ ...prev, expiryDate: e.target.value }))}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div style={styles.modalFooter}>
-                <button type="button" onClick={() => setShowAddBatchModal(false)} style={styles.cancelBtn}>Cancel</button>
-                <button type="submit" style={styles.submitBtn}>Add Inventory Batch</button>
-              </div>
-            </form>
           </div>
         </div>
       )}
 
-      {/* ══ ADJUST STOCK MODAL ═══════════════════════════════════════════════════ */}
-      {showAdjustModal && selectedBatch && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modalCard}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Manual Stock Adjustment</h3>
-              <button onClick={() => { setShowAdjustModal(false); setSelectedBatch(null); }} style={styles.closeBtn}><X size={18} /></button>
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: INITIAL BATCH ENTRY
+          ───────────────────────────────────────────────────────────── */}
+      {showAddBatchModal && (
+        <Modal title="Initial Batch Production Lot Entry" onClose={() => setShowAddBatchModal(false)}>
+          <form onSubmit={handleAddBatch} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="form-group">
+              <label className="form-label">Product <span className="required">*</span></label>
+              <select
+                className="form-select"
+                value={batchForm.productId}
+                onChange={e => setBatchForm(prev => ({ ...prev, productId: e.target.value }))}
+                required
+              >
+                <option value="">— Select Product —</option>
+                {products.map(p => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.unit})</option>
+                ))}
+              </select>
             </div>
-            <div style={{ backgroundColor: '#0f172a', padding: '0.875rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', border: '1px solid #1e293b' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Target Batch:</div>
-              <strong style={{ fontSize: '0.9375rem', color: '#f8fafc' }}>{selectedBatch.batchNumber}</strong>
-              <span style={{ fontSize: '0.8125rem', color: '#94a3b8', marginLeft: '0.5rem' }}>({selectedBatch.product.name})</span>
-              <div style={{ fontSize: '0.8125rem', color: '#10b981', fontWeight: 600, marginTop: '0.25rem' }}>
-                Current Available Qty: {selectedBatch.availableQuantity.toLocaleString()} {selectedBatch.product.unit}
-              </div>
-            </div>
-            <form onSubmit={handleAdjustStock} style={styles.form}>
-              <div style={styles.formRow}>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>Adjustment Type <span style={{ color: '#ef4444' }}>*</span></label>
-                  <select
-                    style={styles.select}
-                    value={adjustForm.type}
-                    onChange={(e) => setAdjustForm((prev) => ({ ...prev, type: e.target.value }))}
-                    required
-                  >
-                    <option value="ADJUSTMENT_IN">Addition (ADJUSTMENT_IN)</option>
-                    <option value="ADJUSTMENT_OUT">Deduction (ADJUSTMENT_OUT)</option>
-                  </select>
-                </div>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>Adjustment Quantity <span style={{ color: '#ef4444' }}>*</span></label>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    style={styles.input}
-                    placeholder="0.00"
-                    value={adjustForm.quantity}
-                    onChange={(e) => setAdjustForm((prev) => ({ ...prev, quantity: e.target.value }))}
-                    required
-                  />
-                </div>
-              </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Reason / Remarks <span style={{ color: '#ef4444' }}>*</span></label>
+            <div className="form-group">
+              <label className="form-label">Batch / Lot Number <span className="required">*</span></label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="e.g. NPK-2026-B08"
+                value={batchForm.batchNumber}
+                onChange={e => setBatchForm(prev => ({ ...prev, batchNumber: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-group">
+                <label className="form-label">Manufacturing Date <span className="required">*</span></label>
                 <input
-                  type="text"
-                  style={styles.input}
-                  placeholder="e.g. Audit correction, damage deduction, production surplus"
-                  value={adjustForm.reason}
-                  onChange={(e) => setAdjustForm((prev) => ({ ...prev, reason: e.target.value }))}
+                  className="form-input"
+                  type="date"
+                  value={batchForm.manufacturingDate}
+                  onChange={e => setBatchForm(prev => ({ ...prev, manufacturingDate: e.target.value }))}
                   required
                 />
               </div>
 
-              <div style={styles.modalFooter}>
-                <button type="button" onClick={() => { setShowAdjustModal(false); setSelectedBatch(null); }} style={styles.cancelBtn}>Cancel</button>
-                <button type="submit" style={styles.submitBtn}>Apply Adjustment</button>
+              <div className="form-group">
+                <label className="form-label">Expiry Date <span className="required">*</span></label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={batchForm.expiryDate}
+                  onChange={e => setBatchForm(prev => ({ ...prev, expiryDate: e.target.value }))}
+                  required
+                />
               </div>
-            </form>
-          </div>
-        </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Initial Manufactured Quantity <span className="required">*</span></label>
+              <input
+                className="form-input"
+                type="number"
+                min="0.01"
+                step="any"
+                placeholder="10000"
+                value={batchForm.initialQuantity}
+                onChange={e => setBatchForm(prev => ({ ...prev, initialQuantity: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+              <button type="button" onClick={() => setShowAddBatchModal(false)} className="btn btn-secondary">
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary">
+                Register Production Lot
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: CONTEXTUAL STOCK ADJUSTMENT
+          ───────────────────────────────────────────────────────────── */}
+      {showAdjustModal && selectedBatchForAdjust && (
+        <Modal
+          title={`Adjust Stock — Lot ${selectedBatchForAdjust.batchNumber}`}
+          onClose={() => setShowAdjustModal(false)}
+        >
+          <form onSubmit={handleAdjustStock} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Batch Context Card */}
+            <div style={{ padding: '12px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '12px' }}>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Product:</span> <strong>{selectedBatchForAdjust.product?.name}</strong></div>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Current Available:</span> <strong style={{ color: 'var(--brand-400)' }}>{selectedBatchForAdjust.availableQuantity.toLocaleString()} {selectedBatchForAdjust.product?.unit}</strong></div>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Reserved:</span> <span>{selectedBatchForAdjust.reservedQuantity.toLocaleString()}</span></div>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Expires:</span> <span>{new Date(selectedBatchForAdjust.expiryDate).toLocaleDateString('en-IN')}</span></div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Adjustment Type</label>
+              <select
+                className="form-select"
+                value={adjustForm.type}
+                onChange={e => setAdjustForm(prev => ({ ...prev, type: e.target.value }))}
+              >
+                <option value="ADJUSTMENT_IN">ADJUSTMENT_IN (Add Stock / Count Surplus)</option>
+                <option value="ADJUSTMENT_OUT">ADJUSTMENT_OUT (Deduct Stock / Damage / Count Deficit)</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Quantity to Adjust <span className="required">*</span></label>
+              <input
+                className="form-input"
+                type="number"
+                min="0.01"
+                step="any"
+                placeholder="Quantity"
+                value={adjustForm.quantity}
+                onChange={e => setAdjustForm(prev => ({ ...prev, quantity: e.target.value }))}
+                required
+                style={{ fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 700 }}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Audit Reason / Justification</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="e.g. Monthly physical inventory count variance reconciliation"
+                value={adjustForm.reason}
+                onChange={e => setAdjustForm(prev => ({ ...prev, reason: e.target.value }))}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+              <button type="button" onClick={() => setShowAdjustModal(false)} className="btn btn-secondary">
+                Cancel
+              </button>
+              <button type="submit" disabled={adjustSubmitting} className="btn btn-primary">
+                {adjustSubmitting ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Sliders size={15} />}
+                Confirm Adjustment
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const styles = {
-  container: { display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1400px', margin: '0 auto' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' },
-  title: { fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' },
-  subtitle: { fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' },
-  addBtn: {
-    display: 'flex', alignItems: 'center', gap: '8px',
-    backgroundColor: 'var(--brand-600)', color: '#ffffff', border: 'none',
-    borderRadius: 'var(--radius-md)', padding: '10px 16px', fontSize: '13px',
-    fontWeight: 700, cursor: 'pointer', transition: 'var(--transition-fast)',
+// ─── Modal Styles ─────────────────────────────────────────────────────
+const ms = {
+  overlay: {
+    position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)',
+    backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', zIndex: 1000, padding: '1rem',
   },
-  syncBtn: {
-    display: 'flex', alignItems: 'center', gap: '8px',
-    backgroundColor: 'rgba(99, 102, 241, 0.12)', color: '#818cf8',
-    border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: 'var(--radius-md)',
-    padding: '9px 16px', fontSize: '13px', fontWeight: 700,
-    cursor: 'pointer', transition: 'var(--transition-fast)',
+  modal: {
+    backgroundColor: 'var(--surface-1)', border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-lg)', width: '100%', maxHeight: '90vh',
+    display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-xl)',
   },
-  tabsContainer: { display: 'flex', borderBottom: '1px solid var(--border-subtle)', gap: '16px' },
-  tab: {
-    background: 'none', border: 'none', padding: '10px 14px',
-    fontSize: '13.5px', fontWeight: 700, cursor: 'pointer', transition: 'var(--transition-fast)',
-  },
-  cardHeader: {
-    display: 'flex', alignItems: 'center', gap: '8px',
+  header: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)',
-    backgroundColor: 'var(--surface-2)',
   },
-  cardTitle: { fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' },
-  table: { width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' },
-  theadRow: { backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border-subtle)' },
-  th: { padding: '12px 18px', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.05em' },
-  tr: { borderBottom: '1px solid var(--border-subtle)', transition: 'background-color 0.15s ease' },
-  td: { padding: '14px 18px', color: 'var(--text-primary)' },
-  adjustBtn: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6',
-    border: '1px solid rgba(59, 130, 246, 0.25)', padding: '5px 10px',
-    borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 700,
-    display: 'inline-flex', alignItems: 'center', gap: '4px', transition: 'var(--transition-fast)',
-  },
-  kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px' },
-  kpiCard: {
-    backgroundColor: 'var(--surface-1)', borderRadius: 'var(--radius-lg)', padding: '18px',
-    border: '1px solid var(--border-subtle)', transition: 'var(--transition-fast)',
-    boxShadow: 'var(--shadow-sm)',
-  },
-  kpiIcon: { padding: '8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center' },
-  kpiValue: { fontSize: '24px', fontWeight: 800, lineHeight: 1.2, fontFamily: 'var(--font-mono)' },
-  kpiSub: { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' },
-  label: { fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)' },
-  input: {
-    padding: '10px 14px', backgroundColor: 'var(--surface-2)',
-    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
-    fontSize: '13.5px', outline: 'none', width: '100%', boxSizing: 'border-box',
-  },
-  select: {
-    backgroundColor: 'var(--surface-2)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-    padding: '10px 14px', color: 'var(--text-primary)', fontSize: '13px',
-    outline: 'none', cursor: 'pointer', transition: 'var(--transition-fast)', width: '100%',
-  },
-  allocateBtn: {
-    backgroundColor: '#3b82f6', color: '#ffffff', border: 'none',
-    borderRadius: 'var(--radius-md)', padding: '12px', fontWeight: 700,
-    fontSize: '14px', cursor: 'pointer', transition: 'var(--transition-fast)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-  },
-  loadingState: {
-    display: 'flex', flexDirection: 'column', justifyContent: 'center',
-    alignItems: 'center', gap: '12px', padding: '60px 0',
-  },
-  spinner: { animation: 'spin 1s linear infinite', color: 'var(--brand-500)' },
-  emptyState: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center',
-    textAlign: 'center', padding: '50px 20px',
-  },
-  modalOverlay: {
-    position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-    backgroundColor: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(8px)',
-    zIndex: 999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px',
-  },
-  modalCard: {
-    backgroundColor: 'var(--surface-1)', border: '1px solid var(--border-subtle)', borderRadius: '16px',
-    width: '100%', maxWidth: '560px', boxShadow: 'var(--shadow-xl)',
-    display: 'flex', flexDirection: 'column', padding: '24px',
-  },
-  modalHeader: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px',
-  },
-  modalTitle: { fontSize: '17px', fontWeight: 800, color: 'var(--text-primary)' },
+  title: { margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' },
   closeBtn: {
-    background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: '4px', borderRadius: '6px',
+    background: 'none', border: 'none', color: 'var(--text-tertiary)',
+    cursor: 'pointer', padding: '4px', borderRadius: '4px',
   },
-  form: { display: 'flex', flexDirection: 'column', gap: '16px' },
-  formRow: { display: 'flex', gap: '12px' },
-  formGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
-  modalFooter: {
-    display: 'flex', justifyContent: 'flex-end', gap: '10px',
-    borderTop: '1px solid var(--border-subtle)', paddingTop: '16px', marginTop: '8px',
-  },
-  cancelBtn: {
-    backgroundColor: 'transparent', border: '1px solid var(--border-default)', color: 'var(--text-secondary)',
-    borderRadius: 'var(--radius-md)', padding: '9px 16px', fontSize: '13px',
-    fontWeight: 700, cursor: 'pointer', transition: 'var(--transition-fast)',
-  },
-  submitBtn: {
-    backgroundColor: 'var(--brand-600)', border: 'none', color: '#ffffff',
-    borderRadius: 'var(--radius-md)', padding: '9px 20px', fontSize: '13px',
-    fontWeight: 700, cursor: 'pointer', transition: 'var(--transition-fast)',
-  },
+  body: { padding: '20px', overflowY: 'auto' },
 };

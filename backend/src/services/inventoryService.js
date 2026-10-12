@@ -319,6 +319,7 @@ export async function allocateFEFO(organizationId, productId, requestedQuantity)
       expiryStatus,
       availableQuantity: batch.availableQuantity,
       allocatedQuantity: allocatedQty,
+      quantity: allocatedQty,
     });
 
     remaining -= allocatedQty;
