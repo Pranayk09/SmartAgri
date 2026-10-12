@@ -23,14 +23,14 @@ import {
 
 // ─── Credit utilization badge helper ────────────────────────────────────────
 function UtilizationBar({ pct }) {
-  const color = pct >= 100 ? '#ef4444' : pct >= 80 ? '#f59e0b' : '#10b981';
+  const color = pct >= 100 ? 'var(--status-danger)' : pct >= 80 ? 'var(--status-warning)' : 'var(--status-success)';
   const cappedPct = Math.min(pct, 100);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-      <div style={{ flex: 1, height: '6px', borderRadius: '99px', backgroundColor: '#1e293b', overflow: 'hidden' }}>
+      <div style={{ flex: 1, height: '7px', borderRadius: '99px', backgroundColor: 'var(--surface-3)', overflow: 'hidden' }}>
         <div style={{ width: `${cappedPct}%`, height: '100%', borderRadius: '99px', backgroundColor: color, transition: 'width 0.4s ease' }} />
       </div>
-      <span style={{ fontSize: '0.75rem', fontWeight: 700, color, minWidth: '38px', textAlign: 'right' }}>{pct.toFixed(1)}%</span>
+      <span style={{ fontSize: '0.75rem', fontWeight: 700, color, minWidth: '40px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{pct.toFixed(1)}%</span>
     </div>
   );
 }
@@ -615,105 +615,105 @@ export default function CustomersView() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = {
-  container:   { display: 'flex', flexDirection: 'column', gap: '1.5rem' },
-  header:      { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' },
-  title:       { fontSize: '1.375rem', fontWeight: 800, color: '#f8fafc' },
-  subtitle:    { fontSize: '0.875rem', color: '#94a3b8', marginTop: '0.25rem' },
+  container:   { display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1400px', margin: '0 auto' },
+  header:      { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' },
+  title:       { fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' },
+  subtitle:    { fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' },
   addBtn: {
-    display: 'flex', alignItems: 'center', gap: '0.5rem',
-    backgroundColor: '#059669', color: '#fff', border: 'none',
-    borderRadius: '8px', padding: '0.625rem 1rem', fontSize: '0.8125rem',
-    fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s ease',
+    display: 'flex', alignItems: 'center', gap: '8px',
+    backgroundColor: 'var(--brand-600)', color: '#fff', border: 'none',
+    borderRadius: 'var(--radius-md)', padding: '10px 16px', fontSize: '13px',
+    fontWeight: 700, cursor: 'pointer', transition: 'var(--transition-fast)',
   },
-  tabsContainer: { display: 'flex', borderBottom: '1px solid #1e293b', gap: '1.5rem' },
+  tabsContainer: { display: 'flex', borderBottom: '1px solid var(--border-subtle)', gap: '16px' },
   tab: {
-    background: 'none', border: 'none', padding: '0.75rem 0.5rem',
-    fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s ease',
+    background: 'none', border: 'none', padding: '10px 14px',
+    fontSize: '13.5px', fontWeight: 700, cursor: 'pointer', transition: 'var(--transition-fast)',
   },
-  table:     { width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' },
-  theadRow:  { backgroundColor: '#0f172a', borderBottom: '1px solid #1e293b' },
-  th:        { padding: '1rem 1.25rem', fontWeight: 700, color: '#94a3b8' },
-  tr:        { borderBottom: '1px solid #1e293b', backgroundColor: 'rgba(30, 41, 59, 0.2)' },
-  td:        { padding: '0.875rem 1.25rem', color: '#cbd5e1' },
+  table:     { width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' },
+  theadRow:  { backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border-subtle)' },
+  th:        { padding: '12px 18px', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.05em' },
+  tr:        { borderBottom: '1px solid var(--border-subtle)', transition: 'background-color 0.15s ease' },
+  td:        { padding: '14px 18px', color: 'var(--text-primary)' },
   cardHeader: {
-    display: 'flex', alignItems: 'center', gap: '0.5rem',
-    padding: '1.25rem 1.5rem', borderBottom: '1px solid #1e293b', backgroundColor: '#0f172a',
+    display: 'flex', alignItems: 'center', gap: '8px',
+    padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)', backgroundColor: 'var(--surface-2)',
   },
-  cardTitle:  { fontSize: '1rem', fontWeight: 700, color: '#f8fafc' },
-  kpiGrid:    { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' },
-  kpiCard:    { backgroundColor: '#1e293b', borderRadius: '12px', padding: '1.25rem', border: '1px solid #1e293b' },
-  kpiIcon:    { padding: '0.5rem', borderRadius: '8px', display: 'inline-flex', alignItems: 'center' },
-  kpiLabel:   { fontSize: '0.8125rem', fontWeight: 700, color: '#94a3b8' },
-  kpiValue:   { fontSize: '1.875rem', fontWeight: 800, lineHeight: 1, marginTop: '0.25rem' },
-  kpiSub:     { fontSize: '0.75rem', color: '#64748b', marginTop: '0.375rem' },
+  cardTitle:  { fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' },
+  kpiGrid:    { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px' },
+  kpiCard:    { backgroundColor: 'var(--surface-1)', borderRadius: 'var(--radius-lg)', padding: '18px', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-sm)' },
+  kpiIcon:    { padding: '8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center' },
+  kpiLabel:   { fontSize: '11px', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' },
+  kpiValue:   { fontSize: '24px', fontWeight: 800, lineHeight: 1.2, marginTop: '4px', fontFamily: 'var(--font-mono)' },
+  kpiSub:     { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '6px' },
   editBtn: {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    width: '28px', height: '28px', borderRadius: '6px',
+    width: '30px', height: '30px', borderRadius: '6px',
     backgroundColor: 'rgba(59,130,246,0.1)', color: '#3b82f6',
-    border: '1px solid rgba(59,130,246,0.2)', cursor: 'pointer', transition: 'all 0.2s',
+    border: '1px solid rgba(59,130,246,0.25)', cursor: 'pointer', transition: 'var(--transition-fast)',
   },
   deleteBtn: {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    width: '28px', height: '28px', borderRadius: '6px',
-    backgroundColor: 'rgba(239,68,68,0.1)', color: '#ef4444',
-    border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', transition: 'all 0.2s',
+    width: '30px', height: '30px', borderRadius: '6px',
+    backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--status-danger)',
+    border: '1px solid rgba(239,68,68,0.25)', cursor: 'pointer', transition: 'var(--transition-fast)',
   },
   creditBtn: {
-    display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+    display: 'inline-flex', alignItems: 'center', gap: '4px',
     backgroundColor: 'rgba(245,158,11,0.1)', color: '#f59e0b',
-    border: '1px solid rgba(245,158,11,0.2)', padding: '0.375rem 0.625rem',
-    borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
-    transition: 'all 0.2s',
+    border: '1px solid rgba(245,158,11,0.25)', padding: '5px 10px',
+    borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
+    transition: 'var(--transition-fast)',
   },
-  loadingState: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '4rem 0' },
-  spinner:      { animation: 'spin 1s linear infinite', color: '#10b981' },
-  emptyState:   { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '3rem', textAlign: 'center' },
+  loadingState: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '60px 0' },
+  spinner:      { animation: 'spin 1s linear infinite', color: 'var(--brand-500)' },
+  emptyState:   { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '50px 20px', textAlign: 'center' },
   modalOverlay: {
     position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-    backgroundColor: 'rgba(11,15,23,0.75)', backdropFilter: 'blur(8px)',
-    zIndex: 999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1.5rem',
+    backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)',
+    zIndex: 999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px',
   },
   modalCard: {
-    backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '16px',
-    width: '100%', maxWidth: '600px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-    padding: '1.5rem', maxHeight: '90vh', overflowY: 'auto',
+    backgroundColor: 'var(--surface-1)', border: '1px solid var(--border-subtle)', borderRadius: '16px',
+    width: '100%', maxWidth: '600px', boxShadow: 'var(--shadow-xl)',
+    padding: '24px', maxHeight: '90vh', overflowY: 'auto',
   },
   modalHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    borderBottom: '1px solid #334155', paddingBottom: '1rem', marginBottom: '1.25rem',
+    borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px',
   },
-  modalTitle: { fontSize: '1.125rem', fontWeight: 800, color: '#f8fafc' },
+  modalTitle: { fontSize: '17px', fontWeight: 800, color: 'var(--text-primary)' },
   closeBtn: {
-    background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '6px',
+    background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', padding: '4px', borderRadius: '6px',
   },
-  form:      { display: 'flex', flexDirection: 'column', gap: '1.25rem' },
-  formRow:   { display: 'flex', gap: '1rem' },
-  formGroup: { display: 'flex', flexDirection: 'column', gap: '0.375rem' },
-  label:     { fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8' },
+  form:      { display: 'flex', flexDirection: 'column', gap: '16px' },
+  formRow:   { display: 'flex', gap: '12px' },
+  formGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  label:     { fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)' },
   input: {
-    padding: '0.625rem 0.875rem', backgroundColor: '#0f172a',
-    border: '1px solid #334155', borderRadius: '8px', color: '#f8fafc',
-    fontSize: '0.875rem', outline: 'none', width: '100%', boxSizing: 'border-box',
+    padding: '10px 14px', backgroundColor: 'var(--surface-2)',
+    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
+    fontSize: '13.5px', outline: 'none', width: '100%', boxSizing: 'border-box',
   },
   select: {
-    backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px',
-    padding: '0.625rem 0.875rem', color: '#cbd5e1', fontSize: '0.8125rem',
+    backgroundColor: 'var(--surface-2)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
+    padding: '10px 14px', color: 'var(--text-primary)', fontSize: '13px',
     outline: 'none', cursor: 'pointer', width: '100%',
   },
   modalFooter: {
-    display: 'flex', justifyContent: 'flex-end', gap: '0.75rem',
-    borderTop: '1px solid #334155', paddingTop: '1.25rem', marginTop: '0.5rem',
+    display: 'flex', justifyContent: 'flex-end', gap: '10px',
+    borderTop: '1px solid var(--border-subtle)', paddingTop: '16px', marginTop: '8px',
   },
   cancelBtn: {
-    backgroundColor: 'transparent', border: '1px solid #334155', color: '#cbd5e1',
-    borderRadius: '8px', padding: '0.625rem 1rem', fontSize: '0.8125rem',
+    backgroundColor: 'transparent', border: '1px solid var(--border-default)', color: 'var(--text-secondary)',
+    borderRadius: 'var(--radius-md)', padding: '9px 16px', fontSize: '13px',
     fontWeight: 700, cursor: 'pointer',
   },
   submitBtn: {
-    display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
-    backgroundColor: '#059669', border: 'none', color: '#fff',
-    borderRadius: '8px', padding: '0.625rem 1.25rem', fontSize: '0.8125rem',
+    display: 'inline-flex', alignItems: 'center', gap: '6px',
+    backgroundColor: 'var(--brand-600)', border: 'none', color: '#fff',
+    borderRadius: 'var(--radius-md)', padding: '9px 20px', fontSize: '13px',
     fontWeight: 700, cursor: 'pointer',
   },
 };

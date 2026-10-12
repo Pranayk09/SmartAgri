@@ -438,15 +438,15 @@ function StatCard({ label, value, color }) {
   return (
     <div style={{
       flex: 1,
-      background: 'rgba(15,23,42,0.6)',
-      border: `1px solid ${color}30`,
+      background: 'var(--surface-2)',
+      border: `1px solid ${color}35`,
       borderRadius: '10px',
       padding: '0.875rem 0.75rem',
       textAlign: 'center',
       minWidth: 0,
     }}>
-      <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color }}>{value}</p>
-      <p style={{ margin: '0.25rem 0 0', fontSize: '0.7rem', color: '#64748b', fontWeight: 600 }}>{label}</p>
+      <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color, fontFamily: 'var(--font-mono)' }}>{value}</p>
+      <p style={{ margin: '0.25rem 0 0', fontSize: '0.7rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>{label}</p>
     </div>
   );
 }
@@ -455,45 +455,47 @@ function StatCard({ label, value, color }) {
 const s = {
   overlay: {
     position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-    backgroundColor: 'rgba(7,10,19,0.8)', backdropFilter: 'blur(12px)',
+    backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)',
     zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1.5rem',
   },
   modal: {
-    backgroundColor: '#0f172a',
-    border: '1px solid #1e293b',
-    borderRadius: '20px',
+    backgroundColor: 'var(--surface-1)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: '16px',
     width: '100%',
     maxWidth: '680px',
     maxHeight: '92vh',
     display: 'flex',
     flexDirection: 'column',
-    boxShadow: '0 40px 80px -20px rgba(0,0,0,0.7)',
+    boxShadow: 'var(--shadow-xl)',
     overflow: 'hidden',
   },
   header: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-    padding: '1.5rem 1.5rem 1.25rem',
-    borderBottom: '1px solid #1e293b',
+    padding: '1.25rem 1.5rem',
+    borderBottom: '1px solid var(--border-subtle)',
+    backgroundColor: 'var(--surface-2)',
     flexShrink: 0,
   },
   headerLeft: { display: 'flex', alignItems: 'flex-start', gap: '0.875rem' },
   headerIcon: {
     width: '40px', height: '40px', borderRadius: '10px',
-    background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)',
+    background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  title: { fontSize: '1.05rem', fontWeight: 800, color: '#f8fafc', margin: 0 },
-  subtitle: { fontSize: '0.75rem', color: '#475569', margin: '0.2rem 0 0' },
+  title: { fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 },
+  subtitle: { fontSize: '0.75rem', color: 'var(--text-tertiary)', margin: '0.2rem 0 0' },
   closeBtn: {
-    background: 'rgba(51,65,85,0.4)', border: '1px solid #334155',
-    color: '#94a3b8', cursor: 'pointer', padding: '0.375rem', borderRadius: '8px',
+    background: 'transparent', border: '1px solid var(--border-subtle)',
+    color: 'var(--text-tertiary)', cursor: 'pointer', padding: '0.375rem', borderRadius: '8px',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     transition: 'all 0.2s ease', flexShrink: 0,
   },
   // Step Bar
   stepBar: {
-    display: 'flex', alignItems: 'center', padding: '1rem 1.5rem',
-    borderBottom: '1px solid #1e293b', flexShrink: 0,
+    display: 'flex', alignItems: 'center', padding: '0.875rem 1.5rem',
+    borderBottom: '1px solid var(--border-subtle)', flexShrink: 0,
+    backgroundColor: 'var(--surface-1)',
   },
   stepItem: { display: 'flex', alignItems: 'center', gap: '0.5rem' },
   stepCircle: {
@@ -512,7 +514,7 @@ const s = {
   // Upload step
   infoBanner: {
     display: 'flex', gap: '0.75rem', padding: '0.875rem 1rem',
-    background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)',
+    background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)',
     borderRadius: '10px',
   },
   dropzone: {
@@ -521,10 +523,10 @@ const s = {
     cursor: 'pointer', transition: 'all 0.25s ease',
   },
   columnsCard: {
-    background: 'rgba(30,41,59,0.3)', border: '1px solid #1e293b',
+    background: 'var(--surface-2)', border: '1px solid var(--border-subtle)',
     borderRadius: '10px', padding: '0.875rem 1rem',
   },
-  columnsTitle: { color: '#64748b', fontSize: '0.72rem', fontWeight: 700, margin: '0 0 0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' },
+  columnsTitle: { color: 'var(--text-tertiary)', fontSize: '0.72rem', fontWeight: 700, margin: '0 0 0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' },
   columnsPills: { display: 'flex', flexWrap: 'wrap', gap: '0.375rem' },
   pill: {
     padding: '0.2rem 0.6rem', borderRadius: '100px', border: '1px solid',
@@ -534,60 +536,60 @@ const s = {
   statsRow: { display: 'flex', gap: '0.75rem' },
   warningBanner: {
     display: 'flex', gap: '0.75rem', padding: '0.75rem 1rem',
-    background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)',
+    background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
     borderRadius: '10px', alignItems: 'flex-start',
   },
   mappingCard: {
-    background: 'rgba(30,41,59,0.3)', border: '1px solid #1e293b',
+    background: 'var(--surface-2)', border: '1px solid var(--border-subtle)',
     borderRadius: '10px', padding: '0.875rem 1rem',
   },
-  mappingTitle: { color: '#64748b', fontSize: '0.72rem', fontWeight: 700, margin: '0 0 0.625rem', textTransform: 'uppercase', letterSpacing: '0.05em' },
+  mappingTitle: { color: 'var(--text-tertiary)', fontSize: '0.72rem', fontWeight: 700, margin: '0 0 0.625rem', textTransform: 'uppercase', letterSpacing: '0.05em' },
   mappingGrid: { display: 'flex', flexWrap: 'wrap', gap: '0.375rem 1.5rem' },
   mappingRow: { display: 'flex', alignItems: 'center', gap: '0.375rem' },
-  mappingCanonical: { color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600 },
-  mappingFile: { color: '#10b981', fontSize: '0.75rem', fontFamily: 'monospace' },
-  tableWrapper: { overflowX: 'auto', borderRadius: '10px', border: '1px solid #1e293b' },
+  mappingCanonical: { color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 600 },
+  mappingFile: { color: 'var(--brand-500)', fontSize: '0.75rem', fontFamily: 'monospace' },
+  tableWrapper: { overflowX: 'auto', borderRadius: '10px', border: '1px solid var(--border-subtle)' },
   table: { width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.78rem' },
-  theadRow: { background: '#0a0f1a', borderBottom: '1px solid #1e293b' },
-  th: { padding: '0.625rem 0.875rem', color: '#64748b', fontWeight: 700, whiteSpace: 'nowrap' },
-  tr: { borderBottom: '1px solid #1e293b', transition: 'background 0.2s' },
-  td: { padding: '0.625rem 0.875rem', color: '#cbd5e1' },
+  theadRow: { background: 'var(--surface-2)', borderBottom: '1px solid var(--border-subtle)' },
+  th: { padding: '0.625rem 0.875rem', color: 'var(--text-tertiary)', fontWeight: 700, whiteSpace: 'nowrap' },
+  tr: { borderBottom: '1px solid var(--border-subtle)', transition: 'background 0.2s' },
+  td: { padding: '0.625rem 0.875rem', color: 'var(--text-primary)' },
   unitBadge: {
-    background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)',
+    background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)',
     color: '#3b82f6', padding: '0.1rem 0.45rem', borderRadius: '4px',
     fontSize: '0.7rem', fontWeight: 700,
   },
   errorCard: {
-    background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.15)',
+    background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)',
     borderRadius: '10px', padding: '0.875rem 1rem',
   },
   errorRow: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.35rem' },
   seeMoreBtn: {
-    background: 'none', border: 'none', color: '#ef4444',
+    background: 'none', border: 'none', color: 'var(--status-danger)',
     fontSize: '0.72rem', cursor: 'pointer', padding: '0.25rem 0',
     fontWeight: 700,
   },
   // Result step
   resultIconWrap: {
     width: '72px', height: '72px', borderRadius: '50%',
-    background: 'rgba(16,185,129,0.1)', border: '2px solid rgba(16,185,129,0.3)',
+    background: 'rgba(16,185,129,0.12)', border: '2px solid rgba(16,185,129,0.3)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   // Footer
   footer: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: '1rem', borderTop: '1px solid #1e293b', marginTop: '0.5rem',
+    paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)', marginTop: '0.5rem',
   },
   ghostBtn: {
     display: 'flex', alignItems: 'center', gap: '0.4rem',
-    background: 'transparent', border: '1px solid #334155',
-    color: '#94a3b8', cursor: 'pointer', padding: '0.6rem 1rem',
+    background: 'transparent', border: '1px solid var(--border-default)',
+    color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.6rem 1rem',
     borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700,
     transition: 'all 0.2s ease',
   },
   primaryBtn: {
     display: 'flex', alignItems: 'center', gap: '0.4rem',
-    background: '#059669', border: 'none',
+    background: 'var(--brand-600)', border: 'none',
     color: '#fff', cursor: 'pointer', padding: '0.6rem 1.25rem',
     borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700,
     transition: 'all 0.2s ease',

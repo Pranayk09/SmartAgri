@@ -29,20 +29,41 @@ import {
   LogOut,
   User,
   Bell,
-  ShieldAlert,
+  CheckCheck,
+  Moon,
+  Sun,
   Loader2,
   Lock,
-  UserCog
+  UserCog,
+  ChevronRight,
+  Menu,
+  X
 } from 'lucide-react';
 
 export default function App() {
   const { user, loading, isAuthenticated, logout, hasPermission } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('smartagri_theme') || 'dark';
+  });
+
   const [notifications, setNotifications] = useState([
-    { id: 1, message: "Urgent: NPK batch #NPK-2026-B12 expiring soon.", read: false },
-    { id: 2, message: "Sales Order SO-00261 confirmed by Bangalore.", read: true },
+    { id: 1, message: "Urgent: NPK batch #NPK-2026-B12 expiring in 18 days.", time: "10m ago", read: false, type: "warning" },
+    { id: 2, message: "Sales Order SO-00261 confirmed by Bangalore Agro.", time: "45m ago", read: false, type: "success" },
+    { id: 3, message: "Customer 'Hindustan Fertilizers' credit utilization at 92%.", time: "2h ago", read: true, type: "info" }
   ]);
+
+  // Apply theme to HTML document
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('smartagri_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  };
 
   // Sync state with hash route
   useEffect(() => {
@@ -54,6 +75,7 @@ export default function App() {
         setCurrentView('dashboard');
       }
       setShowNotifications(false);
+      setSidebarOpen(false); // Close mobile sidebar on route switch
     };
 
     window.addEventListener('hashchange', handleHashChange);
@@ -67,9 +89,15 @@ export default function App() {
     return (
       <div style={styles.loadingContainer}>
         <div style={styles.loadingCard}>
-          <Loader2 size={48} color="#10b981" style={styles.spinner} />
-          <p style={{ marginTop: '1rem', color: '#94a3b8', fontSize: '0.9375rem', fontWeight: 600 }}>
-            Initializing SmartAgri ERP...
+          <div style={styles.loadingLogo}>
+            <Sprout size={36} color="#10b981" />
+          </div>
+          <Loader2 size={36} color="#10b981" style={styles.spinner} />
+          <h3 style={{ marginTop: '1.25rem', color: '#f1f5f9', fontSize: '1.125rem', fontWeight: 700 }}>
+            SmartAgri ERP
+          </h3>
+          <p style={{ marginTop: '0.25rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+            Initializing enterprise workspace...
           </p>
         </div>
       </div>
@@ -80,22 +108,43 @@ export default function App() {
     return <Login />;
   }
 
-  // Sidebar navigation mapping with required permissions
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} />, permission: 'dashboard.view' },
-    { id: 'products', label: 'Products', icon: <Package size={18} />, permission: 'products.view' },
-    { id: 'inventory', label: 'Batch Inventory & FEFO', icon: <Boxes size={18} />, permission: 'inventory.view' },
-    { id: 'customers', label: 'Customers & Credit', icon: <Users size={18} />, permission: 'customers.view' },
-    { id: 'pricing', label: 'Bulk Pricing Engine', icon: <Tag size={18} />, permission: 'products.view' },
-    { id: 'sales', label: 'Sales Orders', icon: <ShoppingCart size={18} />, permission: 'sales.view' },
-    { id: 'invoices', label: 'Invoices & Payments', icon: <Receipt size={18} />, permission: 'invoices.view' },
-    { id: 'reports', label: 'Analytics & Reports', icon: <BarChart3 size={18} />, permission: 'dashboard.view' },
-    { id: 'users', label: 'User Management', icon: <UserCog size={18} />, permission: 'users.manage' },
+  // Sidebar navigation sections with permissions
+  const navSections = [
+    {
+      title: 'Overview',
+      items: [
+        { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} />, permission: 'dashboard.view' }
+      ]
+    },
+    {
+      title: 'Catalog & Inventory',
+      items: [
+        { id: 'products', label: 'Products & Categories', icon: <Package size={18} />, permission: 'products.view' },
+        { id: 'inventory', label: 'Batch Inventory & FEFO', icon: <Boxes size={18} />, permission: 'inventory.view' },
+        { id: 'pricing', label: 'Bulk Pricing Engine', icon: <Tag size={18} />, permission: 'products.view' }
+      ]
+    },
+    {
+      title: 'Sales & Finance',
+      items: [
+        { id: 'customers', label: 'Customers & Credit', icon: <Users size={18} />, permission: 'customers.view' },
+        { id: 'sales', label: 'Sales Orders', icon: <ShoppingCart size={18} />, permission: 'sales.view' },
+        { id: 'invoices', label: 'Invoices & Payments', icon: <Receipt size={18} />, permission: 'invoices.view' }
+      ]
+    },
+    {
+      title: 'Intelligence & Admin',
+      items: [
+        { id: 'reports', label: 'Analytics & Reports', icon: <BarChart3 size={18} />, permission: 'dashboard.view' },
+        { id: 'users', label: 'User Management', icon: <UserCog size={18} />, permission: 'users.manage' }
+      ]
+    }
   ];
 
-  const filteredNavItems = navItems.filter(item => hasPermission(item.permission));
-  const currentNavItem = navItems.find(item => item.id === currentView);
-  const isAuthorized = currentNavItem ? hasPermission(currentNavItem.permission) : true;
+  // Flattened for authorization check
+  const allNavItems = navSections.flatMap(s => s.items);
+  const currentNavItem = allNavItems.find(item => item.id === currentView) || { label: 'Dashboard', permission: 'dashboard.view' };
+  const isAuthorized = hasPermission(currentNavItem.permission);
 
   const handleMarkAllRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
@@ -108,11 +157,18 @@ export default function App() {
       return (
         <div style={styles.unauthContainer}>
           <div className="card" style={styles.unauthCard}>
-            <Lock size={48} color="#ef4444" style={{ marginBottom: '1rem', animation: 'bounce 2s infinite' }} />
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f8fafc', marginBottom: '0.5rem' }}>Access Denied</h3>
-            <p style={{ fontSize: '0.875rem', color: '#94a3b8', lineHeight: 1.5 }}>
-              Your account role (<strong style={{ color: '#10b981' }}>{user.role}</strong>) does not have the permission <code>{currentNavItem?.permission}</code> required to view this module.
+            <div style={styles.unauthIconBox}>
+              <Lock size={32} color="#ef4444" />
+            </div>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+              Access Restricted
+            </h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: '360px', margin: '0 auto' }}>
+              Your current account role (<strong style={{ color: 'var(--brand-500)' }}>{user.role}</strong>) does not have permission <code>{currentNavItem?.permission}</code> to access this module.
             </p>
+            <a href="#dashboard" className="btn btn-primary" style={{ marginTop: '1.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+              Return to Dashboard
+            </a>
           </div>
         </div>
       );
@@ -144,99 +200,179 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* Sidebar Layout */}
-      <aside className="sidebar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem', padding: '0 0.5rem' }}>
-          <Sprout size={32} color="#10b981" />
-          <div>
-            <h1 style={{ fontSize: '1.125rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#f8fafc' }}>
-              SmartAgri <span style={{ color: '#10b981' }}>ERP</span>
-            </h1>
-            <p style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Fertilizer Mfg & Dist</p>
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div 
+          onClick={() => setSidebarOpen(false)}
+          style={styles.mobileOverlay}
+        />
+      )}
+
+      {/* Enterprise Sidebar */}
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-mobile-open' : ''}`}>
+        {/* Brand Header */}
+        <div className="sidebar-brand">
+          <div className="sidebar-brand-icon">
+            <Sprout size={22} color="#10b981" />
+          </div>
+          <div className="sidebar-brand-text">
+            <div className="sidebar-brand-name">
+              SmartAgri <span>ERP</span>
+            </div>
+            <div className="sidebar-brand-sub">Fertilizer Mfg & Dist</div>
           </div>
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
-          {filteredNavItems.map((item) => {
-            const isActive = currentView === item.id;
+        {/* Grouped Navigation */}
+        <nav className="sidebar-nav">
+          {navSections.map((section, sIdx) => {
+            const visibleItems = section.items.filter(item => hasPermission(item.permission));
+            if (visibleItems.length === 0) return null;
+
             return (
-              <a 
-                key={item.id} 
-                href={`#${item.id}`} 
-                style={navItemStyle(isActive)}
-              >
-                {item.icon} {item.label}
-              </a>
+              <React.Fragment key={section.title || sIdx}>
+                <div className="nav-section-label">{section.title}</div>
+                {visibleItems.map(item => {
+                  const isActive = currentView === item.id;
+                  return (
+                    <a
+                      key={item.id}
+                      href={`#${item.id}`}
+                      className={`nav-item ${isActive ? 'active' : ''}`}
+                      title={item.label}
+                    >
+                      <span className="nav-icon">{item.icon}</span>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                    </a>
+                  );
+                })}
+              </React.Fragment>
             );
           })}
         </nav>
 
-        {/* User Card inside Sidebar */}
-        <div style={styles.userCard}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={styles.avatar}>
-              <User size={16} color="#10b981" />
+        {/* User Card in Sidebar Footer */}
+        <div className="sidebar-user">
+          <div className="sidebar-user-card">
+            <div className="sidebar-user-avatar">
+              {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
             </div>
-            <div style={{ overflow: 'hidden' }}>
-              <p style={styles.userName}>{user.name}</p>
-              <p style={styles.userRole}>{user.role}</p>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="sidebar-user-name" title={user.name}>{user.name}</div>
+              <div className="sidebar-user-role">{user.role}</div>
             </div>
           </div>
         </div>
       </aside>
 
-      {/* Main Container */}
+      {/* Main App Container */}
       <main className="main-content">
+        {/* Header Bar */}
         <header className="header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Activity size={18} color="#10b981" />
-            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#94a3b8' }}>System Status:</span>
-            <span className="badge badge-success">ONLINE</span>
+          <div className="header-left">
+            <button 
+              className="header-icon-btn mobile-menu-toggle"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              title="Toggle Navigation Menu"
+              style={{ display: 'none' }}
+            >
+              {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+
+            <div>
+              <div className="header-breadcrumb">
+                <span>SmartAgri ERP</span>
+                <ChevronRight size={12} className="header-breadcrumb-sep" />
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{currentNavItem.label}</span>
+              </div>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', position: 'relative' }}>
+          <div className="header-right">
+            {/* Live System Health Badge */}
+            <div className="header-org-badge" title="Backend Server Status: Connected">
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block', boxShadow: '0 0 8px #10b981' }} />
+              <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Online</span>
+            </div>
+
+            {/* Organization Tag */}
+            {user.organizationName && (
+              <span className="badge badge-primary" style={{ textTransform: 'none', fontWeight: 600 }}>
+                {user.organizationName}
+              </span>
+            )}
+
             {/* Notification Bell */}
             <div style={{ position: 'relative' }}>
-              <button onClick={() => setShowNotifications(!showNotifications)} style={styles.iconButton} title="System Alerts">
-                <Bell size={18} color="#cbd5e1" />
-                {unreadCount > 0 && <span style={styles.bellBadge}>{unreadCount}</span>}
+              <button 
+                onClick={() => setShowNotifications(!showNotifications)} 
+                className="header-icon-btn" 
+                title="System Notifications"
+              >
+                <Bell size={17} />
+                {unreadCount > 0 && <span className="header-badge">{unreadCount}</span>}
               </button>
 
               {showNotifications && (
                 <div style={styles.notificationDropdown}>
                   <div style={styles.dropdownHeader}>
-                    <span style={{ fontWeight: 700, color: '#f8fafc' }}>Notifications</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Bell size={15} color="var(--brand-500)" />
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '13px' }}>Notifications</span>
+                    </div>
                     {unreadCount > 0 && (
                       <button onClick={handleMarkAllRead} style={styles.markReadBtn}>
-                        Mark all read
+                        <CheckCheck size={13} /> Mark all read
                       </button>
                     )}
                   </div>
                   <div style={styles.dropdownList}>
-                    {notifications.map((n) => (
-                      <div key={n.id} style={{ ...styles.dropdownItem, borderLeft: n.read ? 'none' : '3px solid #10b981' }}>
-                        <p style={{ ...styles.dropdownMsg, color: n.read ? '#94a3b8' : '#cbd5e1' }}>{n.message}</p>
+                    {notifications.length === 0 ? (
+                      <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '12px' }}>
+                        No notifications
                       </div>
-                    ))}
+                    ) : (
+                      notifications.map((n) => (
+                        <div 
+                          key={n.id} 
+                          style={{ 
+                            ...styles.dropdownItem, 
+                            borderLeft: n.read ? '3px solid transparent' : '3px solid var(--brand-500)',
+                            backgroundColor: n.read ? 'transparent' : 'rgba(16, 185, 129, 0.04)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                            <p style={{ ...styles.dropdownMsg, color: n.read ? 'var(--text-secondary)' : 'var(--text-primary)', fontWeight: n.read ? 400 : 500 }}>
+                              {n.message}
+                            </p>
+                          </div>
+                          <span style={styles.dropdownTime}>{n.time}</span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}
             </div>
 
-            <span className="badge badge-info" style={{ textTransform: 'none' }}>
-              {user.organizationName}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#f8fafc', fontSize: '0.875rem', fontWeight: 600 }}>
-              <ShieldCheck size={18} color="#10b981" /> {user.role}
-            </div>
-            <button onClick={logout} style={styles.logoutBtn} title="Sign Out">
-              <LogOut size={16} /> Sign Out
+            {/* Theme Toggle Button */}
+            <button 
+              onClick={toggleTheme} 
+              className="theme-toggle" 
+              title={theme === 'dark' ? "Switch to Light Theme" : "Switch to Dark Theme"}
+            >
+              {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
+
+            {/* Logout Button */}
+            <button onClick={logout} className="logout-btn" title="Sign out of SmartAgri">
+              <LogOut size={14} /> Sign Out
             </button>
           </div>
         </header>
 
+        {/* Content Body */}
         <div className="content-body">
-          {/* Main active view wrapped in ErrorBoundary */}
           <ErrorBoundary onReset={() => setCurrentView('dashboard')}>
             {renderActiveView()}
           </ErrorBoundary>
@@ -246,23 +382,6 @@ export default function App() {
   );
 }
 
-function navItemStyle(isActive) {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.75rem',
-    padding: '0.75rem 1rem',
-    borderRadius: '8px',
-    color: isActive ? '#10b981' : '#94a3b8',
-    backgroundColor: isActive ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
-    textDecoration: 'none',
-    fontWeight: isActive ? 700 : 500,
-    fontSize: '0.875rem',
-    borderLeft: isActive ? '3px solid #10b981' : '3px solid transparent',
-    transition: 'all 0.2s ease',
-  };
-}
-
 const styles = {
   loadingContainer: {
     display: 'flex',
@@ -270,142 +389,39 @@ const styles = {
     alignItems: 'center',
     minHeight: '100vh',
     width: '100vw',
-    backgroundColor: '#0b0f17',
+    backgroundColor: 'var(--bg-app)',
   },
   loadingCard: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    background: 'rgba(30, 41, 59, 0.4)',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
+    background: 'var(--surface-1)',
+    border: '1px solid var(--border-subtle)',
     borderRadius: '16px',
-    padding: '3rem',
-    boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+    padding: '3rem 2.5rem',
+    boxShadow: 'var(--shadow-xl)',
+    minWidth: '280px',
+  },
+  loadingLogo: {
+    width: '56px',
+    height: '56px',
+    borderRadius: '14px',
+    background: 'rgba(16, 185, 129, 0.12)',
+    border: '1px solid rgba(16, 185, 129, 0.25)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: '1.25rem',
   },
   spinner: {
     animation: 'spin 1s linear infinite',
-  },
-  logoutBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.375rem',
-    padding: '0.5rem 0.75rem',
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    color: '#ef4444',
-    border: '1px solid rgba(239, 68, 68, 0.2)',
-    borderRadius: '8px',
-    fontWeight: 600,
-    fontSize: '0.8125rem',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-  },
-  iconButton: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
-    padding: '0.5rem',
-    borderRadius: '8px',
-    transition: 'all 0.2s ease',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-  },
-  bellBadge: {
-    position: 'absolute',
-    top: '2px',
-    right: '2px',
-    width: '16px',
-    height: '16px',
-    borderRadius: '50%',
-    backgroundColor: '#ef4444',
-    color: '#ffffff',
-    fontSize: '0.625rem',
-    fontWeight: 800,
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    border: '2px solid #0f172a',
-  },
-  notificationDropdown: {
-    position: 'absolute',
-    top: '110%',
-    right: 0,
-    width: '320px',
-    backgroundColor: '#1e293b',
-    border: '1px solid #334155',
-    borderRadius: '12px',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
-    zIndex: 100,
-    overflow: 'hidden',
-  },
-  dropdownHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '0.75rem 1rem',
-    backgroundColor: '#0f172a',
-    borderBottom: '1px solid #334155',
-    fontSize: '0.8125rem',
-  },
-  markReadBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#10b981',
-    fontWeight: 700,
-    cursor: 'pointer',
-    fontSize: '0.75rem',
-  },
-  dropdownList: {
-    display: 'flex',
-    flexDirection: 'column',
-    maxHeight: '240px',
-    overflowY: 'auto',
-  },
-  dropdownItem: {
-    padding: '0.875rem 1rem',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
-    backgroundColor: 'rgba(30, 41, 59, 0.2)',
-  },
-  dropdownMsg: {
-    fontSize: '0.75rem',
-    lineHeight: 1.4,
-  },
-  userCard: {
-    padding: '1rem',
-    backgroundColor: 'rgba(30, 41, 59, 0.3)',
-    borderRadius: '12px',
-    border: '1px solid rgba(255, 255, 255, 0.04)',
-    marginTop: 'auto',
-  },
-  avatar: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '32px',
-    height: '32px',
-    borderRadius: '8px',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    border: '1px solid rgba(16, 185, 129, 0.2)',
-  },
-  userName: {
-    fontSize: '0.8125rem',
-    fontWeight: 700,
-    color: '#f8fafc',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  userRole: {
-    fontSize: '0.75rem',
-    color: '#94a3b8',
-    fontWeight: 500,
   },
   unauthContainer: {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
     padding: '4rem 2rem',
+    minHeight: '60vh',
   },
   unauthCard: {
     maxWidth: '440px',
@@ -415,7 +431,81 @@ const styles = {
     alignItems: 'center',
     textAlign: 'center',
     padding: '2.5rem',
-    border: '1px solid rgba(239, 68, 68, 0.15)',
-    background: 'rgba(239, 68, 68, 0.02)',
+    border: '1px solid rgba(239, 68, 68, 0.25)',
+    background: 'var(--surface-1)',
+    borderRadius: '16px',
+    boxShadow: 'var(--shadow-lg)',
+  },
+  unauthIconBox: {
+    width: '64px',
+    height: '64px',
+    borderRadius: '50%',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    border: '1px solid rgba(239, 68, 68, 0.25)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: '1.25rem',
+  },
+  notificationDropdown: {
+    position: 'absolute',
+    top: 'calc(100% + 8px)',
+    right: 0,
+    width: '340px',
+    backgroundColor: 'var(--surface-1)',
+    border: '1px solid var(--border-default)',
+    borderRadius: '12px',
+    boxShadow: 'var(--shadow-xl)',
+    zIndex: 100,
+    overflow: 'hidden',
+  },
+  dropdownHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '12px 16px',
+    backgroundColor: 'var(--surface-2)',
+    borderBottom: '1px solid var(--border-subtle)',
+  },
+  markReadBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--brand-500)',
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontSize: '11px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  dropdownList: {
+    display: 'flex',
+    flexDirection: 'column',
+    maxHeight: '280px',
+    overflowY: 'auto',
+  },
+  dropdownItem: {
+    padding: '12px 16px',
+    borderBottom: '1px solid var(--border-subtle)',
+    transition: 'background 0.15s ease',
+  },
+  dropdownMsg: {
+    fontSize: '12px',
+    lineHeight: 1.5,
+  },
+  dropdownTime: {
+    fontSize: '10px',
+    color: 'var(--text-tertiary)',
+    marginTop: '4px',
+    display: 'block',
+  },
+  mobileOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 25,
   }
 };
