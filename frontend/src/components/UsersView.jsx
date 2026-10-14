@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { apiGet, apiPost, apiPut } from "../utils/api";
 import {
@@ -198,9 +198,9 @@ export default function UsersView() {
       <div className="card" style={{ overflow: "hidden", padding: 0 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ backgroundColor: "rgba(15,23,42,0.6)" }}>
+            <tr style={{ backgroundColor: "var(--surface-2)" }}>
               {["Name & Email", "Role", "Status", "Joined", "Actions"].map(h => (
-                <th key={h} style={{ padding: "0.875rem 1.25rem", textAlign: "left", fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>{h}</th>
+                <th key={h} style={{ padding: "12px 18px", textAlign: "left", fontSize: "11px", fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid var(--border-subtle)" }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -209,38 +209,38 @@ export default function UsersView() {
               const isSelf = u.id === currentUser.id;
               const isOwner = u.role?.name === "OWNER";
               return (
-                <tr key={u.id} style={{ backgroundColor: idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)", transition: "background 0.15s" }}>
-                  <td style={{ padding: "1rem 1.25rem", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "0.875rem", fontWeight: 800, color: "#10b981" }}>
+                <tr key={u.id} style={{ borderBottom: "1px solid var(--border-subtle)", transition: "background 0.15s" }}>
+                  <td style={{ padding: "14px 18px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "14px", fontWeight: 800, color: "var(--brand-500)" }}>
                         {u.name?.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p style={{ margin: 0, color: "#f1f5f9", fontWeight: 700, fontSize: "0.875rem" }}>
-                          {u.name} {isSelf && <span style={{ fontSize: "0.7rem", color: "#10b981", fontWeight: 700 }}>(you)</span>}
+                        <p style={{ margin: 0, color: "var(--text-primary)", fontWeight: 700, fontSize: "13.5px" }}>
+                          {u.name} {isSelf && <span style={{ fontSize: "11px", color: "var(--brand-500)", fontWeight: 700 }}>(you)</span>}
                         </p>
-                        <p style={{ margin: 0, color: "#64748b", fontSize: "0.75rem" }}>{u.email}</p>
+                        <p style={{ margin: 0, color: "var(--text-tertiary)", fontSize: "12px" }}>{u.email}</p>
                       </div>
                     </div>
                   </td>
-                  <td style={{ padding: "1rem 1.25rem", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                  <td style={{ padding: "14px 18px" }}>
                     <RoleBadge role={u.role?.name} />
                   </td>
-                  <td style={{ padding: "1rem 1.25rem", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                  <td style={{ padding: "14px 18px" }}>
                     <StatusDot status={u.status} />
                   </td>
-                  <td style={{ padding: "1rem 1.25rem", borderBottom: "1px solid rgba(255,255,255,0.03)", color: "#64748b", fontSize: "0.8125rem" }}>
+                  <td style={{ padding: "14px 18px", color: "var(--text-secondary)", fontSize: "13px" }}>
                     {u.createdAt ? new Date(u.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
                   </td>
-                  <td style={{ padding: "1rem 1.25rem", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <td style={{ padding: "14px 18px" }}>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                       {/* Toggle Status */}
                       {!isSelf && !isOwner && (
                         <button
                           onClick={() => handleToggleStatus(u)}
                           disabled={actionLoading}
                           title={u.status === "ACTIVE" ? "Deactivate user" : "Activate user"}
-                          style={{ display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.4rem 0.75rem", borderRadius: 7, border: `1px solid ${u.status === "ACTIVE" ? "rgba(239,68,68,0.25)" : "rgba(16,185,129,0.25)"}`, backgroundColor: u.status === "ACTIVE" ? "rgba(239,68,68,0.08)" : "rgba(16,185,129,0.08)", color: u.status === "ACTIVE" ? "#ef4444" : "#10b981", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>
+                          style={{ display: "flex", alignItems: "center", gap: "4px", padding: "6px 12px", borderRadius: 6, border: `1px solid ${u.status === "ACTIVE" ? "rgba(239,68,68,0.25)" : "rgba(16,185,129,0.25)"}`, backgroundColor: u.status === "ACTIVE" ? "rgba(239,68,68,0.08)" : "rgba(16,185,129,0.08)", color: u.status === "ACTIVE" ? "var(--status-danger)" : "var(--brand-500)", fontSize: "12px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>
                           {u.status === "ACTIVE" ? <ShieldOff size={13} /> : <ShieldCheck size={13} />}
                           {u.status === "ACTIVE" ? "Disable" : "Enable"}
                         </button>
@@ -251,12 +251,12 @@ export default function UsersView() {
                           onClick={() => setShowRoleModal({ user: u })}
                           disabled={actionLoading}
                           title="Change role"
-                          style={{ display: "flex", alignItems: "center", gap: "0.375rem", padding: "0.4rem 0.75rem", borderRadius: 7, border: "1px solid rgba(99,102,241,0.25)", backgroundColor: "rgba(99,102,241,0.08)", color: "#818cf8", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>
+                          style={{ display: "flex", alignItems: "center", gap: "4px", padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(99,102,241,0.25)", backgroundColor: "rgba(99,102,241,0.08)", color: "#818cf8", fontSize: "12px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>
                           <ChevronDown size={13} /> Role
                         </button>
                       )}
                       {(isSelf || isOwner) && (
-                        <span style={{ color: "#475569", fontSize: "0.75rem", fontStyle: "italic" }}>
+                        <span style={{ color: "var(--text-tertiary)", fontSize: "12px", fontStyle: "italic" }}>
                           {isSelf ? "— (your account)" : "— (protected)"}
                         </span>
                       )}
@@ -268,7 +268,7 @@ export default function UsersView() {
           </tbody>
         </table>
         {users.length === 0 && (
-          <div style={{ textAlign: "center", padding: "3rem", color: "#475569" }}>No users found in this organization.</div>
+          <div style={{ textAlign: "center", padding: "3rem", color: "var(--text-tertiary)" }}>No users found in this organization.</div>
         )}
       </div>
 
@@ -386,11 +386,11 @@ export default function UsersView() {
 }
 
 const labelStyle = {
-  display: "block", marginBottom: 6, fontSize: "0.8125rem", fontWeight: 600, color: "#94a3b8"
+  display: "block", marginBottom: 6, fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-secondary)"
 };
 
 const inputStyle = {
-  width: "100%", padding: "0.625rem 0.875rem", backgroundColor: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, color: "#f1f5f9",
+  width: "100%", padding: "10px 14px", backgroundColor: "var(--surface-2)",
+  border: "1px solid var(--border-default)", borderRadius: 8, color: "var(--text-primary)",
   fontSize: "0.875rem", outline: "none", boxSizing: "border-box"
 };

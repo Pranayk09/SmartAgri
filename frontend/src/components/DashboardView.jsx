@@ -1,9 +1,29 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { TrendingUp, AlertTriangle, Users, Coins, Box, ShoppingBag, BellRing, Sparkles } from 'lucide-react';
+import { 
+  TrendingUp, 
+  AlertTriangle, 
+  Users, 
+  Coins, 
+  Boxes, 
+  ShoppingBag, 
+  Sparkles, 
+  ArrowUpRight, 
+  CheckCircle2, 
+  ShieldAlert,
+  Clock,
+  ChevronRight,
+  PackageCheck,
+  PlusCircle,
+  FileSpreadsheet,
+  Receipt,
+  Scale
+} from 'lucide-react';
 import { apiGet } from '../utils/api';
 
 export default function DashboardView() {
+  const { user } = useAuth();
   const { showToast } = useToast();
   
   const [kpis, setKpis] = useState({
@@ -16,8 +36,9 @@ export default function DashboardView() {
   
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (showFeedback = false) => {
     setLoading(true);
     try {
       const [kpiRes, alertsRes] = await Promise.all([
@@ -26,7 +47,10 @@ export default function DashboardView() {
       ]);
       setKpis(kpiRes.data || {});
       setAlerts(alertsRes.data || []);
-      showToast('System stats reloaded and refreshed successfully!', 'success');
+      setLastRefreshed(new Date());
+      if (showFeedback) {
+        showToast('Dashboard metrics refreshed with live production data.', 'success');
+      }
     } catch (error) {
       showToast('Failed to load dashboard data: ' + error.message, 'error');
     } finally {
@@ -35,27 +59,8 @@ export default function DashboardView() {
   };
 
   useEffect(() => {
-    fetchDashboardData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchDashboardData(false);
   }, []);
-
-  const triggerToast = (type) => {
-    switch (type) {
-      case 'success':
-        showToast('System stats reloaded and refreshed successfully!', 'success');
-        break;
-      case 'warning':
-        showToast('Distributor CREDIT_LIMIT near overrun for "Hindustan Agro".', 'warning');
-        break;
-      case 'error':
-        showToast('Failed to connect to secondary replication server.', 'error');
-        break;
-      case 'info':
-      default:
-        showToast('New sales order notification from Bangalore distributor.', 'info');
-        break;
-    }
-  };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
@@ -65,114 +70,315 @@ export default function DashboardView() {
     }).format(amount || 0);
   };
 
+  const getRoleGreeting = () => {
+    if (user?.role === 'OWNER') {
+      return {
+        title: 'Executive Control & Financial Health',
+        desc: 'Comprehensive oversight of fertilizer inventory valuation, sales fulfillment, and customer credit exposure.'
+      };
+    } else if (user?.role === 'INVENTORY_MANAGER') {
+      return {
+        title: 'Warehouse & Batch FEFO Operations',
+        desc: 'Real-time stock monitoring, shelf-life expiry control, and batch dispatch tracking.'
+      };
+    } else {
+      return {
+        title: 'Sales & Distribution Pipeline',
+        desc: 'Distributor order check compliance, credit utilization management, and invoice tracking.'
+      };
+    }
+  };
+
+  const greeting = getRoleGreeting();
+
   return (
     <div style={styles.container}>
-      {/* Welcome Banner */}
+      {/* Welcome & Role Context Banner */}
       <div style={styles.banner}>
-        <div style={{ flex: 1 }}>
-          <h2 style={styles.bannerTitle}>ERP Control Center</h2>
-          <p style={styles.bannerSubtitle}>
-            SmartAgri Modular Monolith — Real-time tracking of manufacturing batches, credit limits, and FEFO dispatches.
-          </p>
+        <div style={{ flex: 1, minWidth: '280px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+            <span className="badge badge-primary">
+              {user?.role ? user.role.replace('_', ' ') : 'ENTERPRISE ERP'}
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+              Last synced: {lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+          <h2 style={styles.bannerTitle}>
+            Welcome back, <span style={{ color: 'var(--brand-500)' }}>{user?.name || 'Manager'}</span>
+          </h2>
+          <p style={styles.bannerSubtitle}>{greeting.desc}</p>
         </div>
-        <button onClick={fetchDashboardData} style={styles.bannerBtn} disabled={loading}>
-          <Sparkles size={16} /> {loading ? 'Syncing...' : 'Sync Live Data'}
-        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <button 
+            onClick={() => fetchDashboardData(true)} 
+            className="btn btn-primary" 
+            disabled={loading}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px' }}
+          >
+            <Sparkles size={16} className={loading ? 'spin' : ''} />
+            <span>{loading ? 'Syncing...' : 'Sync Live Data'}</span>
+          </button>
+        </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards Grid */}
       <div style={styles.kpiGrid}>
-        <div className="card" style={styles.kpiCard}>
-          <div style={styles.kpiHeader}>
-            <span style={styles.kpiTitle}>Active Inventory</span>
-            <div style={{ ...styles.iconBox, backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
-              <Box size={20} color="#10b981" />
+        {/* Active Inventory */}
+        <div className="card card-hover" style={styles.kpiCard}>
+          <div style={styles.kpiTop}>
+            <div>
+              <span style={styles.kpiLabel}>Active Finished Goods</span>
+              <h3 style={styles.kpiValue}>
+                {loading ? '...' : (kpis.activeInventory || 0).toLocaleString()} <span style={{ fontSize: '15px', color: 'var(--text-tertiary)', fontWeight: 600 }}>KG</span>
+              </h3>
+            </div>
+            <div style={{ ...styles.kpiIconBox, backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
+              <Boxes size={22} />
             </div>
           </div>
-          <p style={styles.kpiVal}>{kpis.activeInventory.toLocaleString()} KG</p>
-          <span style={styles.kpiLabel}>Available across all batches</span>
+          <div style={styles.kpiFooter}>
+            <span className="badge badge-success" style={{ fontSize: '10px' }}>In Stock</span>
+            <span style={styles.kpiMeta}>Available across active production batches</span>
+          </div>
         </div>
 
-        <div className="card" style={styles.kpiCard}>
-          <div style={styles.kpiHeader}>
-            <span style={styles.kpiTitle}>Pending Sales</span>
-            <div style={{ ...styles.iconBox, backgroundColor: 'rgba(59, 130, 246, 0.1)' }}>
-              <ShoppingBag size={20} color="#3b82f6" />
+        {/* Pending Sales Pipeline */}
+        <div className="card card-hover" style={styles.kpiCard}>
+          <div style={styles.kpiTop}>
+            <div>
+              <span style={styles.kpiLabel}>Confirmed Sales Pipeline</span>
+              <h3 style={styles.kpiValue}>
+                {loading ? '...' : formatCurrency(kpis.pendingSales)}
+              </h3>
+            </div>
+            <div style={{ ...styles.kpiIconBox, backgroundColor: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' }}>
+              <ShoppingBag size={22} />
             </div>
           </div>
-          <p style={styles.kpiVal}>{formatCurrency(kpis.pendingSales)}</p>
-          <span style={styles.kpiLabel}>{kpis.pendingOrdersCount} Confirmed Orders</span>
+          <div style={styles.kpiFooter}>
+            <span className="badge badge-info" style={{ fontSize: '10px' }}>
+              {kpis.pendingOrdersCount || 0} Orders
+            </span>
+            <span style={styles.kpiMeta}>Awaiting warehouse dispatch</span>
+          </div>
         </div>
 
-        <div className="card" style={styles.kpiCard}>
-          <div style={styles.kpiHeader}>
-            <span style={styles.kpiTitle}>Credit Utilization</span>
-            <div style={{ ...styles.iconBox, backgroundColor: 'rgba(245, 158, 11, 0.1)' }}>
-              <Coins size={20} color="#f59e0b" />
+        {/* Credit Utilization */}
+        <div className="card card-hover" style={styles.kpiCard}>
+          <div style={styles.kpiTop}>
+            <div>
+              <span style={styles.kpiLabel}>Total Credit Exposure</span>
+              <h3 style={styles.kpiValue}>
+                {loading ? '...' : formatCurrency(kpis.creditUtilization)}
+              </h3>
+            </div>
+            <div style={{ ...styles.kpiIconBox, backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>
+              <Coins size={22} />
             </div>
           </div>
-          <p style={styles.kpiVal}>{formatCurrency(kpis.creditUtilization)}</p>
-          <span style={styles.kpiLabel}>Total Outstanding Balance</span>
+          <div style={styles.kpiFooter}>
+            <span className="badge badge-warning" style={{ fontSize: '10px' }}>Outstanding</span>
+            <span style={styles.kpiMeta}>Total balance utilized across distributors</span>
+          </div>
         </div>
 
-        <div className="card" style={styles.kpiCard}>
-          <div style={styles.kpiHeader}>
-            <span style={styles.kpiTitle}>Active Distributors</span>
-            <div style={{ ...styles.iconBox, backgroundColor: 'rgba(139, 92, 246, 0.1)' }}>
-              <Users size={20} color="#8b5cf6" />
+        {/* Active Distributors */}
+        <div className="card card-hover" style={styles.kpiCard}>
+          <div style={styles.kpiTop}>
+            <div>
+              <span style={styles.kpiLabel}>Active Distributors</span>
+              <h3 style={styles.kpiValue}>
+                {loading ? '...' : kpis.activeDistributors || 0} <span style={{ fontSize: '15px', color: 'var(--text-tertiary)', fontWeight: 600 }}>Agencies</span>
+              </h3>
+            </div>
+            <div style={{ ...styles.kpiIconBox, backgroundColor: 'rgba(167, 139, 250, 0.12)', color: '#a78bfa' }}>
+              <Users size={22} />
             </div>
           </div>
-          <p style={styles.kpiVal}>{kpis.activeDistributors} Accounts</p>
-          <span style={styles.kpiLabel}>Verified Distributors</span>
+          <div style={styles.kpiFooter}>
+            <span className="badge badge-purple" style={{ fontSize: '10px' }}>Verified</span>
+            <span style={styles.kpiMeta}>Active B2B distribution accounts</span>
+          </div>
         </div>
       </div>
 
-      {/* Main Grid: Alerts and Quick Toasts */}
+      {/* Main Content Grid: Quick Actions & Live Alerts */}
       <div style={styles.mainGrid}>
-        {/* Real-time Alerts Panel */}
+        {/* Left Column: Quick Operational Actions */}
         <div className="card" style={styles.panelCard}>
-          <h3 style={styles.panelTitle}>System Notifications & Reminders</h3>
+          <div style={styles.panelHeader}>
+            <div>
+              <h3 style={styles.panelTitle}>Quick ERP Operations</h3>
+              <p style={styles.panelSubtitle}>Instant shortcuts to high-frequency manufacturing and sales workflows</p>
+            </div>
+          </div>
+
+          <div style={styles.actionGrid}>
+            <a href="#sales?action=new" className="card card-hover" style={styles.actionTile}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ ...styles.actionIconBox, backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
+                  <PlusCircle size={20} />
+                </div>
+                <div>
+                  <div style={styles.actionTitle}>New Sales Order</div>
+                  <div style={styles.actionDesc}>Contextual workspace & FEFO check</div>
+                </div>
+              </div>
+              <ChevronRight size={16} color="var(--text-tertiary)" />
+            </a>
+
+            <a href="#inventory" className="card card-hover" style={styles.actionTile}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ ...styles.actionIconBox, backgroundColor: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' }}>
+                  <Boxes size={20} />
+                </div>
+                <div>
+                  <div style={styles.actionTitle}>Batch Inventory & FEFO</div>
+                  <div style={styles.actionDesc}>Inspect shelf life & batch stocks</div>
+                </div>
+              </div>
+              <ChevronRight size={16} color="var(--text-tertiary)" />
+            </a>
+
+            <a href="#products" className="card card-hover" style={styles.actionTile}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ ...styles.actionIconBox, backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>
+                  <PackageCheck size={20} />
+                </div>
+                <div>
+                  <div style={styles.actionTitle}>Catalog & Bulk Import</div>
+                  <div style={styles.actionDesc}>Manage products & upload Excel</div>
+                </div>
+              </div>
+              <ChevronRight size={16} color="var(--text-tertiary)" />
+            </a>
+
+            <a href="#customers" className="card card-hover" style={styles.actionTile}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ ...styles.actionIconBox, backgroundColor: 'rgba(167, 139, 250, 0.12)', color: '#a78bfa' }}>
+                  <Scale size={20} />
+                </div>
+                <div>
+                  <div style={styles.actionTitle}>Distributor Credits</div>
+                  <div style={styles.actionDesc}>Review credit limits & balances</div>
+                </div>
+              </div>
+              <ChevronRight size={16} color="var(--text-tertiary)" />
+            </a>
+
+            <a href="#invoices" className="card card-hover" style={styles.actionTile}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ ...styles.actionIconBox, backgroundColor: 'rgba(14, 165, 233, 0.12)', color: '#0ea5e9' }}>
+                  <Receipt size={20} />
+                </div>
+                <div>
+                  <div style={styles.actionTitle}>Invoices & Payments</div>
+                  <div style={styles.actionDesc}>Issue tax invoices & log payments</div>
+                </div>
+              </div>
+              <ChevronRight size={16} color="var(--text-tertiary)" />
+            </a>
+
+            <a href="#reports" className="card card-hover" style={styles.actionTile}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ ...styles.actionIconBox, backgroundColor: 'rgba(236, 72, 153, 0.12)', color: '#ec4899' }}>
+                  <FileSpreadsheet size={20} />
+                </div>
+                <div>
+                  <div style={styles.actionTitle}>Executive Reports</div>
+                  <div style={styles.actionDesc}>Download analytical CSV audits</div>
+                </div>
+              </div>
+              <ChevronRight size={16} color="var(--text-tertiary)" />
+            </a>
+          </div>
+
+          {/* System Guardrails Info Box */}
+          <div style={styles.guardrailsBox}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <CheckCircle2 size={16} color="var(--brand-500)" />
+              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                Manufacturing Guardrails Active
+              </span>
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              FEFO batch allocation runs on every order confirmation. Credit limit overrun locks are automated to protect working capital against overdue balances.
+            </p>
+          </div>
+        </div>
+
+        {/* Right Column: Live System & Expiry Alerts */}
+        <div className="card" style={styles.panelCard}>
+          <div style={styles.panelHeader}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 style={styles.panelTitle}>System & Risk Alerts</h3>
+                {alerts.length > 0 && (
+                  <span className="badge badge-danger">{alerts.length} Active</span>
+                )}
+              </div>
+              <p style={styles.panelSubtitle}>Automatic expiry notices and distributor credit limit overruns</p>
+            </div>
+          </div>
+
           <div style={styles.alertsList}>
             {loading ? (
-              <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Loading alerts...</p>
+              <div style={styles.loadingBox}>
+                <Clock size={20} className="spin" color="var(--text-tertiary)" />
+                <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Scanning database for alerts...</span>
+              </div>
             ) : alerts.length === 0 ? (
-              <p style={{ color: '#10b981', fontSize: '0.875rem' }}>All systems nominal. No alerts.</p>
-            ) : (
-              alerts.map(alert => (
-                <div key={alert.id} style={styles.alertItem}>
-                  {alert.type === 'error' ? (
-                    <TrendingUp size={18} color="#ef4444" style={{ flexShrink: 0 }} />
-                  ) : (
-                    <AlertTriangle size={18} color="#f59e0b" style={{ flexShrink: 0 }} />
-                  )}
-                  <div>
-                    <p style={styles.alertText}>
-                      <strong>{alert.title}:</strong> {alert.message}
-                    </p>
-                    <span style={styles.alertTime}>{alert.time}</span>
-                  </div>
+              <div style={styles.nominalBox}>
+                <div style={styles.nominalIcon}>
+                  <CheckCircle2 size={28} color="#10b981" />
                 </div>
-              ))
+                <h4 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '8px' }}>
+                  All Systems Nominal
+                </h4>
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', maxWidth: '280px', marginTop: '4px', lineHeight: 1.4 }}>
+                  No batch expiry warnings in the next 30 days and no distributor has overrun their 90% credit threshold.
+                </p>
+              </div>
+            ) : (
+              alerts.map(alert => {
+                const isError = alert.type === 'error';
+                return (
+                  <div 
+                    key={alert.id} 
+                    style={{ 
+                      ...styles.alertItem, 
+                      borderLeft: isError ? '4px solid #ef4444' : '4px solid #f59e0b',
+                      backgroundColor: isError ? 'rgba(239, 68, 68, 0.05)' : 'rgba(245, 158, 11, 0.05)'
+                    }}
+                  >
+                    <div style={{ marginTop: '2px' }}>
+                      {isError ? (
+                        <ShieldAlert size={18} color="#ef4444" />
+                      ) : (
+                        <AlertTriangle size={18} color="#f59e0b" />
+                      )}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                        <span style={{ fontSize: '12.5px', fontWeight: 700, color: isError ? '#ef4444' : '#f59e0b' }}>
+                          {alert.title}
+                        </span>
+                        <span style={styles.alertTime}>{alert.time}</span>
+                      </div>
+                      <p style={styles.alertText}>{alert.message}</p>
+                      <a 
+                        href={alert.title?.toLowerCase().includes('expiry') ? '#inventory' : '#customers'}
+                        style={{ fontSize: '11px', color: isError ? '#ef4444' : '#f59e0b', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '4px', textDecoration: 'none' }}
+                      >
+                        Inspect in Context Workspace →
+                      </a>
+                    </div>
+                  </div>
+                );
+              })
             )}
-          </div>
-        </div>
-
-        {/* Toast Testing Panel */}
-        <div className="card" style={styles.panelCard}>
-          <h3 style={styles.panelTitle}>UI Components Interaction Playground</h3>
-          <p style={styles.panelDesc}>
-            Test the response metrics and the floating notification toast portal setup.
-          </p>
-          <div style={styles.btnGrid}>
-            <button onClick={() => triggerToast('info')} style={{ ...styles.actionBtn, borderLeft: '4px solid #3b82f6' }}>
-              <BellRing size={16} color="#3b82f6" /> Trigger Info Toast
-            </button>
-            <button onClick={() => triggerToast('warning')} style={{ ...styles.actionBtn, borderLeft: '4px solid #f59e0b' }}>
-              <AlertTriangle size={16} color="#f59e0b" /> Trigger Warning Toast
-            </button>
-            <button onClick={() => triggerToast('error')} style={{ ...styles.actionBtn, borderLeft: '4px solid #ef4444' }}>
-              <AlertTriangle size={16} color="#ef4444" /> Trigger Error Toast
-            </button>
           </div>
         </div>
       </div>
@@ -184,145 +390,218 @@ const styles = {
   container: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1.5rem',
+    gap: '24px',
+    maxWidth: '1400px',
+    margin: '0 auto',
   },
   banner: {
-    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%)',
-    border: '1px solid rgba(16, 185, 129, 0.25)',
-    borderRadius: '16px',
-    padding: '1.5rem 2rem',
+    background: 'linear-gradient(135deg, var(--surface-1) 0%, var(--surface-2) 100%)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: 'var(--radius-lg)',
+    padding: '24px 28px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: '1.5rem',
+    gap: '20px',
+    flexWrap: 'wrap',
+    boxShadow: 'var(--shadow-sm)',
   },
   bannerTitle: {
-    fontSize: '1.375rem',
+    fontSize: '22px',
     fontWeight: 800,
-    color: '#f8fafc',
+    color: 'var(--text-primary)',
+    letterSpacing: '-0.02em',
+    lineHeight: 1.3,
   },
   bannerSubtitle: {
-    fontSize: '0.875rem',
-    color: '#cbd5e1',
-    marginTop: '0.25rem',
+    fontSize: '13.5px',
+    color: 'var(--text-secondary)',
+    marginTop: '6px',
     lineHeight: 1.5,
-  },
-  bannerBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    backgroundColor: '#059669',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '8px',
-    padding: '0.625rem 1rem',
-    fontSize: '0.8125rem',
-    fontWeight: 700,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
+    maxWidth: '640px',
   },
   kpiGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-    gap: '1.25rem',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+    gap: '16px',
   },
   kpiCard: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.75rem',
+    justifyContent: 'space-between',
+    padding: '20px',
+    borderRadius: 'var(--radius-lg)',
+    minHeight: '140px',
   },
-  kpiHeader: {
+  kpiTop: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  kpiTitle: {
-    fontSize: '0.8125rem',
-    fontWeight: 700,
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-  },
-  iconBox: {
-    width: '36px',
-    height: '36px',
-    borderRadius: '8px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  kpiVal: {
-    fontSize: '1.625rem',
-    fontWeight: 800,
-    color: '#f8fafc',
+    alignItems: 'flex-start',
+    gap: '12px',
   },
   kpiLabel: {
-    fontSize: '0.75rem',
-    color: '#64748b',
-    fontWeight: 500,
+    fontSize: '11.5px',
+    fontWeight: 700,
+    color: 'var(--text-tertiary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    display: 'block',
+    marginBottom: '6px',
+  },
+  kpiValue: {
+    fontSize: '24px',
+    fontWeight: 800,
+    color: 'var(--text-primary)',
+    letterSpacing: '-0.02em',
+    lineHeight: 1.2,
+    fontFamily: 'var(--font-mono)',
+  },
+  kpiIconBox: {
+    width: '44px',
+    height: '44px',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  kpiFooter: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginTop: '16px',
+    paddingTop: '12px',
+    borderTop: '1px solid var(--border-subtle)',
+  },
+  kpiMeta: {
+    fontSize: '11.5px',
+    color: 'var(--text-tertiary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
   mainGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
-    gap: '1.5rem',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))',
+    gap: '20px',
   },
   panelCard: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1.25rem',
+    padding: '24px',
+    borderRadius: 'var(--radius-lg)',
+  },
+  panelHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '20px',
   },
   panelTitle: {
-    fontSize: '1.125rem',
+    fontSize: '16px',
     fontWeight: 700,
-    color: '#cbd5e1',
+    color: 'var(--text-primary)',
   },
-  panelDesc: {
-    fontSize: '0.8125rem',
-    color: '#94a3b8',
-    lineHeight: 1.5,
+  panelSubtitle: {
+    fontSize: '12.5px',
+    color: 'var(--text-tertiary)',
+    marginTop: '2px',
+  },
+  actionGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+    gap: '12px',
+    marginBottom: '20px',
+  },
+  actionTile: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '14px 16px',
+    textDecoration: 'none',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'var(--surface-2)',
+    border: '1px solid var(--border-subtle)',
+    transition: 'all 0.2s ease',
+  },
+  actionIconBox: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  actionTitle: {
+    fontSize: '13px',
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+  },
+  actionDesc: {
+    fontSize: '11px',
+    color: 'var(--text-tertiary)',
+    marginTop: '2px',
+  },
+  guardrailsBox: {
+    marginTop: 'auto',
+    padding: '14px 16px',
+    borderRadius: 'var(--radius-md)',
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    border: '1px solid rgba(16, 185, 129, 0.2)',
   },
   alertsList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1rem',
+    gap: '12px',
+    maxHeight: '440px',
+    overflowY: 'auto',
   },
   alertItem: {
     display: 'flex',
-    gap: '0.75rem',
-    padding: '0.75rem',
-    backgroundColor: '#0f172a',
-    borderRadius: '8px',
-    border: '1px solid #1e293b',
+    alignItems: 'flex-start',
+    gap: '12px',
+    padding: '14px',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-subtle)',
   },
   alertText: {
-    fontSize: '0.8125rem',
-    color: '#cbd5e1',
-    lineHeight: 1.4,
+    fontSize: '12px',
+    color: 'var(--text-secondary)',
+    lineHeight: 1.5,
+    marginTop: '4px',
   },
   alertTime: {
-    fontSize: '0.6875rem',
-    color: '#64748b',
-    marginTop: '0.25rem',
-    display: 'block',
+    fontSize: '10px',
+    color: 'var(--text-tertiary)',
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
   },
-  btnGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.75rem',
-  },
-  actionBtn: {
+  loadingBox: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.75rem',
-    padding: '0.75rem 1rem',
-    backgroundColor: '#0f172a',
-    border: '1px solid #1e293b',
-    borderRadius: '8px',
-    color: '#f8fafc',
-    fontSize: '0.8125rem',
-    fontWeight: 600,
-    cursor: 'pointer',
-    textAlign: 'left',
-    transition: 'all 0.2s ease',
+    justifyContent: 'center',
+    gap: '10px',
+    padding: '40px 20px',
   },
+  nominalBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '40px 20px',
+    textAlign: 'center',
+    backgroundColor: 'var(--surface-2)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px dashed var(--border-subtle)',
+  },
+  nominalIcon: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  }
 };

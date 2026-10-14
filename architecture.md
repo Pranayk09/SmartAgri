@@ -117,3 +117,38 @@ All API errors return consistent JSON:
 ```
 Standard Error Codes:
 `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `INSUFFICIENT_STOCK`, `CREDIT_LIMIT_EXCEEDED`, `BATCH_EXPIRED`, `BATCH_BLOCKED`, `INVALID_ORDER_STATE`, `PAYMENT_EXCEEDS_OUTSTANDING`, `DUPLICATE_OPERATION`.
+
+---
+
+## Task-Centered Contextual Workspaces Architecture (Phase 15)
+
+SmartAgri ERP organizes the user interface around **real business tasks** rather than isolated database tables or backend modules. While backend services maintain strict separation of concerns, the frontend collates real-time cross-module intelligence into unified, responsive workspaces without altering backend contracts or calculations.
+
+### 1. Architectural Philosophy: Task-to-Information Matrix
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       TASK-CENTERED WORKSPACE                               │
+├──────────────────────────────────────┬──────────────────────────────────────┤
+│ PRIMARY WORK AREA (60%)              │ CONTEXTUAL INTELLIGENCE (40%)        │
+│ • Entity Selector (Customer/Product) │ • Entity Profile & Live Metrics      │
+│ • Direct Transaction Work Form       │ • Cross-Module History & Status      │
+│ • Action Triggers & Check Engine     │ • Authoritative Verification Gauges  │
+└──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+| Task | Primary Work Area | Secondary Supporting Context | Deep Detail Navigation |
+|---|---|---|---|
+| **Sales Order Creation** | Customer picker, Line items, Qty, Unit Price, Draft creation | • Customer credit limit & live utilization<br>• Outstanding invoices & recent orders<br>• Real-time batch stock & FEFO sequence<br>• Bulk pricing rules tier matrix | Customer 360 (`#customers?id=...`) |
+| **Customer Relationship & Credit Review** | Customer directory with search, type filters, and credit risk badges | • 360° Financial profile (Limit, Outstanding, Avail)<br>• Complete sales order history<br>• Unsettled & overdue tax invoices<br>• Payment receipts ledger | Dedicated order/invoice view |
+| **Payment Receipt & Cash Settlement** | Invoice selection, Payment amount, Method, Reference #, Notes | • Customer overall exposure & other unpaid invoices<br>• Previous partial payments on invoice<br>• Real-time credit restoration impact preview | Customer 360 (`#customers`) |
+| **Batch Inventory & Stock Adjustment** | Production lot creation, Manual stock adjustment (Surplus/Deficit) | • Product specifications (SKU, Unit, Category)<br>• Product total stock across all active lots<br>• Shelf-life expiry status & days countdown<br>• Batch movement audit trail (STOCK_IN, DISPATCH) | FEFO Simulator tab |
+
+### 2. Information Hierarchy & Progressive Disclosure
+1. **Primary Context (Immediate):** Critical metrics required to make the immediate transaction decision (e.g., Available Credit, Available Stock, Total Amount, Unit Price).
+2. **Secondary Context (Inline Panels / Drawers):** Historical records and comparative context organized in compact tabs or sticky side drawers (e.g., last 5 orders, batch expiry radar, other unpaid invoices).
+3. **Deep Detail (Dedicated Views):** Comprehensive full-page audit records with cross-navigation links (e.g. Analytics & Reports, Full Movements Ledger).
+
+### 3. Dynamic State & Zero Stale-Data Rule
+- Context panels are entity-aware: changing selected customer or product immediately refreshes all dependent context sections.
+- URL hash routing with query parameters (`#sales?customerId=...`, `#sales?action=new`, `#customers?id=...`, `#inventory?batch=...`) enables deep linking across workspaces while preserving context state.

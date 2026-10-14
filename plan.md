@@ -97,3 +97,12 @@ The primary focus of this MVP is to deliver a complete, production-grade steel t
 - Seed realistic agricultural fertilizer demo data.
 - UI styling polish and status badges.
 - Final review against Definition of Done.
+
+### Phase 15: Contextual, Task-Centered Workspaces (Day 16)
+- **Eliminate Context Switching**: Replace isolated, module-centric screens with unified workspaces structured around user tasks.
+- **Sales Order Creation Workspace**: Split-screen workflow with real-time customer credit utilization, outstanding invoices, batch inventory, and FEFO allocation preview.
+- **Customer 360 Workspace**: Comprehensive commercial cockpit bringing customer details, credit health, order history, invoices ledger, and payment receipts together.
+- **Invoices & Finance Loop Workspace**: Contextual payment recording with real-time customer credit impact preview and ledger tracking.
+- **Batch Inventory & FEFO Engine**: Interactive lot inspection flyout, shelf-life radar, and FEFO simulator.
+- **Cross-Workspace Navigation**: URL hash parameters for deep-linking across modules without losing workflow state.
+

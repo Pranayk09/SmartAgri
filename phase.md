@@ -1,8 +1,8 @@
 # SmartAgri ERP - Phase Tracking & Status
 
-## Current Phase: Phase 10 - Reservation & Dispatch Flow
-**Status:** NOT_STARTED
-**Developer Session:** 8
+## Current Phase: Phase 15 - Contextual, Task-Centered Workspaces
+**Status:** 🟢 COMPLETED
+**Developer Session:** 14
 
 ---
 
@@ -24,6 +24,7 @@
 | **Phase 12**| Dashboard KPIs & Reports | Day 13 | 🟢 COMPLETED | ✅ Passed |
 | **Phase 13**| End-to-End Hardening & Testing| Day 14 | 🟢 COMPLETED | ✅ Passed |
 | **Phase 14**| Seed Data & Polish | Day 15 | 🟢 COMPLETED | ✅ Passed |
+| **Phase 15**| Contextual, Task-Centered Workspaces| Day 16 | 🟢 COMPLETED | ✅ Passed |
 
 ---
 
@@ -474,3 +475,55 @@
 - [x] Validate final UX details (toast positions, loading states, empty states).
 - [x] Confirm layout aesthetics (glassmorphism, padding, responsive design).
 - [x] Review documentation and prepare final project handover state.
+
+---
+
+## Phase 14 Checkpoint Requirements
+1. Rich database seed populates full operational data (customers, products, batches, orders, invoices).
+2. UI styling satisfies modern glassmorphism standards in both Dark and Light themes.
+3. System passes all verification checks.
+
+---
+
+## Phase 15 Active Tasks
+- [x] Design System Tokens: Add contextual workspace layout classes (`.workspace-container`, `.workspace-split`, `.workspace-split-equal`, `.context-flyout-*`, `.context-kpi-grid`, `.context-table`, `.context-utilization-meter`) with responsive breakpoints in `index.css`.
+- [x] Routing & Deep-Linking: Update `App.jsx` to parse query parameters in hash navigation (`#sales?customerId=...`, `#sales?action=new`, `#customers?id=...`, `#inventory?batch=...`).
+- [x] Sales Order Creation Workspace (`SalesOrdersView.jsx`):
+  - [x] Two-column task layout with order line items on left and live contextual panels on right.
+  - [x] Customer Context panel with live credit health meter, available credit, outstanding balance, unpaid invoices count, and previous order history.
+  - [x] Inventory Context panel displaying active batches, stock levels, warehouse locations, and real-time expiry countdowns.
+  - [x] Live Bulk Pricing Rule Tier Matrix displaying applicable discounts for selected items and quantities.
+  - [x] Pre-confirmation Evaluation Gate tab checking stock reservation, credit threshold, and margin compliance before submission.
+  - [x] Order 360 Flyout drawer in registry list allowing instant inspection, line-item preview, FEFO batch allocations, direct confirmation, dispatch, and tax invoice generation.
+- [x] Customer 360 Workspace (`CustomersView.jsx`):
+  - [x] Master-detail workspace layout with left searchable distributor registry and right 360 Context Console.
+  - [x] Dynamic customer context header with credit badge, contact details, and visual credit utilization meter.
+  - [x] Contextual Order History tab with order statuses, totals, and quick link to order workspace.
+  - [x] Contextual Invoices Ledger tab displaying open and paid invoices, balance dues, and inline payment recording trigger.
+  - [x] Contextual Payment Receipts tab showing historical payment allocations and payment methods.
+  - [x] Credit Policy tab showing terms, max credit limit, and risk indicators.
+- [x] Contextual Invoices & Finance Workspace (`InvoicesView.jsx`):
+  - [x] Contextual Ledger and Pending Dispatches tabs.
+  - [x] Contextual Payment Recording Modal with live credit impact preview (`newOutstanding = outstanding - amount`, `newAvailable = available + amount`).
+  - [x] Prior partial payments audit trail and other outstanding customer invoices in the same dialog.
+- [x] Contextual Inventory Workspace (`InventoryView.jsx`):
+  - [x] Batch Context Drawer with product details, stock by warehouse, expiry status badge, and immutable movement ledger history.
+  - [x] Contextual Stock Adjustment modal with real-time balance calculations preview.
+  - [x] FEFO allocation simulator and Expiry Radar integrated directly into the batch management workflow.
+- [x] Cross-Module Deep Linking (`DashboardView.jsx`):
+  - [x] Wire operational quick actions and KPI alerts to navigate directly to relevant contextual workspace tabs with pre-filtered state.
+- [x] E2E Verification & Aesthetics:
+  - [x] Verify production build (`npm run build`).
+  - [x] Browser subagent validation covering sales creation, order 360 drawer, customer 360 console, payment modal, and batch context drawer.
+
+---
+
+## Phase 15 Checkpoint Requirements
+1. Users can complete a Sales Order while viewing customer credit health, outstanding invoices, recent orders, batch expiry, and bulk pricing rules on a single screen without leaving the order form.
+2. Selecting a different customer in the order form instantly refreshes all customer credit metrics, unpaid invoices, and order history with zero stale data.
+3. Customer 360 workspace consolidates orders, invoices, payments, and credit health without requiring navigation to separate modules.
+4. In-context payment recording modal displays live credit restoration preview, payment history, and other unpaid invoices before posting.
+5. Inventory workspace provides batch context drawer with product info, stock balances, expiry countdowns, and movement ledger without leaving the inventory page.
+6. Zero alterations to existing backend business logic, calculations, database schemas, or API contracts.
+7. Both Dark and Light themes display high aesthetic quality with responsive layout behavior across desktop and tablet viewports.
+

@@ -1,20 +1,52 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { apiGet, apiPost } from '../utils/api';
-import { Landmark, AlertTriangle, CheckSquare, Plus, Receipt, Loader2, IndianRupee, FileText, FilePlus } from 'lucide-react';
+import {
+  Landmark, AlertTriangle, CheckSquare, Plus, Receipt, Loader2,
+  IndianRupee, FileText, FilePlus, Search, Filter, ExternalLink,
+  ChevronRight, Calendar, User, ShoppingCart, Clock, CheckCircle2,
+  X, Info, ShieldAlert, CreditCard
+} from 'lucide-react';
 
+// ─── Modal Wrapper ────────────────────────────────────────────────────
+function Modal({ title, onClose, children, maxWidth = '820px' }) {
+  return (
+    <div style={ms.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ ...ms.modal, maxWidth }}>
+        <div style={ms.header}>
+          <h3 style={ms.title}>{title}</h3>
+          <button onClick={onClose} style={ms.closeBtn}><X size={18} /></button>
+        </div>
+        <div style={ms.body}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Invoices & Finance View ─────────────────────────────────────
 export default function InvoicesView() {
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
 
+  const canView = hasPermission('invoices.view');
+  const canCreate = hasPermission('invoices.create');
+  const canPayment = hasPermission('invoices.payment');
+
   const [activeTab, setActiveTab] = useState('ledger'); // 'ledger' | 'pending'
   const [loading, setLoading] = useState(true);
+
+  // Master Lists
   const [invoices, setInvoices] = useState([]);
   const [pendingOrders, setPendingOrders] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [orders, setOrders] = useState([]);
 
-  // Payment Modal State
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  // Search & Filter
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+
+  // Contextual Payment Workspace Modal
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
@@ -24,68 +56,79 @@ export default function InvoicesView() {
   });
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  // ─── Data Fetching ──────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [invRes, pendRes] = await Promise.all([
-        hasPermission('invoices.view') ? apiGet('/invoices') : Promise.resolve({ data: [] }),
-        hasPermission('invoices.create') ? apiGet('/invoices/pending-orders') : Promise.resolve({ data: [] })
+      const [invRes, pendRes, custRes, ordRes] = await Promise.all([
+        canView ? apiGet('/invoices').catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        canCreate ? apiGet('/invoices/pending-orders').catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        apiGet('/customers').catch(() => ({ data: [] })),
+        apiGet('/sales/orders').catch(() => ({ data: [] })),
       ]);
       setInvoices(invRes.data || []);
       setPendingOrders(pendRes.data || []);
+      setCustomers(custRes.data || []);
+      setOrders(ordRes.data || []);
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [canView, canCreate, showToast]);
 
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Handle invoice generation from dispatched order
   const handleGenerateInvoice = async (orderId) => {
     try {
       await apiPost('/invoices', { salesOrderId: orderId });
-      showToast('Invoice generated successfully!', 'success');
-      fetchData(); // Refresh both lists
+      showToast('Tax invoice generated successfully!', 'success');
+      fetchData();
     } catch (err) {
       showToast(err.message, 'error');
     }
   };
 
-  const openPaymentModal = (invoice) => {
+  // Open Contextual Payment Workspace for selected invoice
+  const openPaymentWorkspace = (invoice) => {
     setSelectedInvoice(invoice);
     setPaymentForm({
       amount: invoice.outstandingAmount.toString(),
       paymentMethod: 'BANK_TRANSFER',
       referenceNumber: '',
-      notes: ''
+      notes: `Settlement for ${invoice.invoiceNumber}`
     });
-    setPaymentModalOpen(true);
   };
 
+  // Submit payment
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
+    if (!selectedInvoice) return;
+
+    const amount = parseFloat(paymentForm.amount);
+    if (isNaN(amount) || amount <= 0) {
+      showToast('Please enter a valid payment amount.', 'warning');
+      return;
+    }
+    if (amount > selectedInvoice.outstandingAmount) {
+      showToast(`Amount exceeds outstanding balance (₹${selectedInvoice.outstandingAmount.toLocaleString('en-IN')}).`, 'warning');
+      return;
+    }
+
     setPaymentSubmitting(true);
     try {
-      const amount = parseFloat(paymentForm.amount);
-      if (isNaN(amount) || amount <= 0) {
-        throw new Error('Please enter a valid payment amount.');
-      }
-      if (amount > selectedInvoice.outstandingAmount) {
-        throw new Error(`Amount exceeds outstanding balance (₹${selectedInvoice.outstandingAmount}).`);
-      }
-
       await apiPost(`/invoices/${selectedInvoice.id}/payments`, {
         amount,
         paymentMethod: paymentForm.paymentMethod,
         referenceNumber: paymentForm.referenceNumber,
         notes: paymentForm.notes
       });
-      
-      showToast('Payment recorded successfully. Customer credit restored.', 'success');
-      setPaymentModalOpen(false);
+
+      showToast(`Payment of ₹${amount.toLocaleString('en-IN')} recorded! Customer credit restored.`, 'success');
+      setSelectedInvoice(null);
       fetchData();
     } catch (err) {
       showToast(err.message, 'error');
@@ -94,471 +137,545 @@ export default function InvoicesView() {
     }
   };
 
-  // KPIs
-  const totalOutstanding = invoices.reduce((sum, inv) => sum + inv.outstandingAmount, 0);
-  const totalCollected = invoices.reduce((sum, inv) => sum + inv.amountPaid, 0);
-  const pendingCount = invoices.filter(inv => inv.status !== 'PAID').length;
+  // Context: Customer for selected invoice in payment workspace
+  const invoiceCustomer = useMemo(() => {
+    if (!selectedInvoice) return null;
+    return customers.find(c => c.id === selectedInvoice.customerId) || null;
+  }, [selectedInvoice, customers]);
+
+  // Context: Other unpaid invoices for same customer
+  const otherCustomerInvoices = useMemo(() => {
+    if (!selectedInvoice || !selectedInvoice.customerId) return [];
+    return invoices.filter(inv =>
+      inv.customerId === selectedInvoice.customerId &&
+      inv.id !== selectedInvoice.id &&
+      inv.outstandingAmount > 0
+    );
+  }, [selectedInvoice, invoices]);
+
+  // Context: Linked sales order details for selected invoice
+  const linkedSalesOrder = useMemo(() => {
+    if (!selectedInvoice || !selectedInvoice.salesOrderId) return null;
+    return orders.find(o => o.id === selectedInvoice.salesOrderId) || null;
+  }, [selectedInvoice, orders]);
+
+  // Filtered invoices
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter(inv => {
+      const matchSearch = !searchQuery ||
+        inv.invoiceNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        inv.customer?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        inv.salesOrder?.orderNumber?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchStatus = statusFilter === 'ALL' || inv.status === statusFilter;
+      return matchSearch && matchStatus;
+    });
+  }, [invoices, searchQuery, statusFilter]);
+
+  // KPI Metrics
+  const totalOutstanding = useMemo(() => invoices.reduce((sum, inv) => sum + (inv.outstandingAmount || 0), 0), [invoices]);
+  const totalCollected = useMemo(() => invoices.reduce((sum, inv) => sum + (inv.amountPaid || 0), 0), [invoices]);
+  const pendingCount = useMemo(() => invoices.filter(inv => inv.status !== 'PAID').length, [invoices]);
+  const pendingOrdersCount = pendingOrders.length;
 
   if (loading && invoices.length === 0) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}>
-        <Loader2 size={32} color="#10b981" style={{ animation: 'spin 1s linear infinite' }} />
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '5rem' }}>
+        <Loader2 size={36} color="var(--brand-500)" style={{ animation: 'spin 1s linear infinite' }} />
       </div>
     );
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
+    <div className="workspace-container">
+      {/* Top Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h2 style={styles.title}>Invoices & Payments Finance Loop</h2>
-          <p style={styles.subtitle}>Manage receivables, generate invoices from dispatched orders, and record payments.</p>
+          <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0 }}>
+            Invoices & Finance Cash Loop
+          </h2>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+            Manage commercial receivables, issue tax invoices from dispatched shipments, and record payments to restore customer credit.
+          </p>
         </div>
       </div>
 
-      {/* KPI Strip */}
-      <div style={styles.kpiGrid}>
-        <div className="card" style={styles.kpiCard}>
-          <div style={styles.kpiIconWrapper}>
-            <AlertTriangle size={20} color="#ef4444" />
-          </div>
-          <div>
-            <p style={styles.kpiLabel}>Total Outstanding</p>
-            <p style={styles.kpiValue}>₹{totalOutstanding.toLocaleString('en-IN')}</p>
-          </div>
+      {/* KPI Cards Strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Total Receivables Outstanding
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: 'var(--status-danger)', fontFamily: 'var(--font-mono)' }}>
+            ₹{totalOutstanding.toLocaleString('en-IN')}
+          </p>
         </div>
-        <div className="card" style={styles.kpiCard}>
-          <div style={styles.kpiIconWrapper}>
-            <IndianRupee size={20} color="#10b981" />
-          </div>
-          <div>
-            <p style={styles.kpiLabel}>Total Collected</p>
-            <p style={styles.kpiValue}>₹{totalCollected.toLocaleString('en-IN')}</p>
-          </div>
+
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Total Cash Collected
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: 'var(--status-success)', fontFamily: 'var(--font-mono)' }}>
+            ₹{totalCollected.toLocaleString('en-IN')}
+          </p>
         </div>
-        <div className="card" style={styles.kpiCard}>
-          <div style={{ ...styles.kpiIconWrapper, backgroundColor: 'rgba(59, 130, 246, 0.1)', borderColor: 'rgba(59, 130, 246, 0.2)' }}>
-            <FileText size={20} color="#3b82f6" />
-          </div>
-          <div>
-            <p style={styles.kpiLabel}>Pending Invoices</p>
-            <p style={styles.kpiValue}>{pendingCount}</p>
-          </div>
+
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Unsettled Invoices Count
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: 'var(--status-warning)', fontFamily: 'var(--font-mono)' }}>
+            {pendingCount}
+          </p>
+        </div>
+
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Dispatches Awaiting Invoice
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: pendingOrdersCount > 0 ? 'var(--status-info)' : 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+            {pendingOrdersCount}
+          </p>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={styles.tabs}>
+      {/* Tabs Switcher */}
+      <div className="context-nav-tabs" style={{ maxWidth: '440px' }}>
         <button
-          style={activeTab === 'ledger' ? styles.activeTab : styles.tab}
+          type="button"
+          className={`context-nav-tab ${activeTab === 'ledger' ? 'active' : ''}`}
           onClick={() => setActiveTab('ledger')}
         >
-          <Receipt size={16} /> Invoices Ledger
+          <Receipt size={14} /> Invoices Ledger ({invoices.length})
         </button>
-        {hasPermission('invoices.create') && (
+
+        {canCreate && (
           <button
-            style={activeTab === 'pending' ? styles.activeTab : styles.tab}
+            type="button"
+            className={`context-nav-tab ${activeTab === 'pending' ? 'active' : ''}`}
             onClick={() => setActiveTab('pending')}
           >
-            <FilePlus size={16} /> Dispatched Orders ({pendingOrders.length})
+            <FilePlus size={14} /> Pending Invoicing ({pendingOrders.length})
           </button>
         )}
       </div>
 
-      {/* Tab Content */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {activeTab === 'ledger' && (
-          <table style={styles.table}>
-            <thead>
-              <tr style={styles.theadRow}>
-                <th style={styles.th}>Invoice #</th>
-                <th style={styles.th}>Customer</th>
-                <th style={styles.th}>Sales Order #</th>
-                <th style={styles.th}>Billed</th>
-                <th style={styles.th}>Paid</th>
-                <th style={styles.th}>Outstanding</th>
-                <th style={styles.th}>Status</th>
-                <th style={{ ...styles.th, textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.length === 0 ? (
-                <tr>
-                  <td colSpan="8" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-                    No invoices generated yet.
-                  </td>
-                </tr>
-              ) : (
-                invoices.map(inv => {
-                  const getStatusBadge = (status) => {
-                    switch (status) {
-                      case 'PAID': return <span className="badge badge-success">PAID</span>;
-                      case 'PARTIALLY_PAID': return <span className="badge badge-warning">PARTIAL</span>;
-                      case 'PENDING': default: return <span className="badge badge-danger">PENDING</span>;
-                    }
-                  };
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 1: INVOICES LEDGER
+          ───────────────────────────────────────────────────────────── */}
+      {activeTab === 'ledger' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Search & Status Filters */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
+              <Search size={14} color="var(--text-tertiary)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Search by Invoice #, Customer, or Order #..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ paddingLeft: '34px', fontSize: '13px' }}
+              />
+            </div>
 
-                  return (
-                    <tr key={inv.id} style={styles.tr}>
-                      <td style={{ ...styles.td, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#3b82f6' }}>{inv.invoiceNumber}</td>
-                      <td style={{ ...styles.td, fontWeight: 700 }}>{inv.customer?.name}</td>
-                      <td style={{ ...styles.td, color: '#94a3b8' }}>{inv.salesOrder?.orderNumber}</td>
-                      <td style={styles.td}>₹{inv.totalAmount.toLocaleString('en-IN')}</td>
-                      <td style={{ ...styles.td, color: '#10b981', fontWeight: 600 }}>₹{inv.amountPaid.toLocaleString('en-IN')}</td>
-                      <td style={{ ...styles.td, color: inv.outstandingAmount > 0 ? '#ef4444' : '#cbd5e1', fontWeight: 700 }}>₹{inv.outstandingAmount.toLocaleString('en-IN')}</td>
-                      <td style={styles.td}>{getStatusBadge(inv.status)}</td>
-                      <td style={{ ...styles.td, textAlign: 'right' }}>
-                        {inv.status !== 'PAID' ? (
-                          hasPermission('invoices.payment') ? (
-                            <button onClick={() => openPaymentModal(inv)} style={styles.payBtn}>
-                              <Landmark size={14} /> Record Payment
-                            </button>
-                          ) : (
-                            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No access</span>
-                          )
-                        ) : (
-                          <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                            <CheckSquare size={14} /> Settled
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase' }}>
+                Status:
+              </label>
+              <select
+                className="form-select"
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                style={{ minWidth: '160px', fontSize: '13px' }}
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="PENDING">Pending</option>
+                <option value="PARTIALLY_PAID">Partially Paid</option>
+                <option value="PAID">Paid (Settled)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Invoices Table */}
+          {filteredInvoices.length === 0 ? (
+            <div className="card" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+              <Receipt size={40} style={{ marginBottom: '8px' }} />
+              <h4 style={{ margin: 0, color: 'var(--text-primary)' }}>No Invoices Found</h4>
+              <p style={{ margin: '4px 0 0', fontSize: '13px' }}>No invoices match current search or filters.</p>
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Invoice #</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Customer</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Sales Order</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Due Date</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Total Billed</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Amount Paid</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Outstanding</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Status</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredInvoices.map(inv => {
+                    const isSettled = inv.status === 'PAID';
+                    return (
+                      <tr key={inv.id} style={{ borderBottom: '1px solid var(--border-subtle)', transition: 'background-color 0.15s ease' }}>
+                        <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--status-info)' }}>
+                          {inv.invoiceNumber}
+                        </td>
+                        <td style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {inv.customer?.name}
+                        </td>
+                        <td style={{ padding: '12px 16px', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                          {inv.salesOrder?.orderNumber || '—'}
+                        </td>
+                        <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>
+                          {new Date(inv.dueDate).toLocaleDateString('en-IN')}
+                        </td>
+                        <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)' }}>
+                          ₹{inv.totalAmount.toLocaleString('en-IN')}
+                        </td>
+                        <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', color: 'var(--status-success)', fontWeight: 600 }}>
+                          ₹{inv.amountPaid.toLocaleString('en-IN')}
+                        </td>
+                        <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: inv.outstandingAmount > 0 ? 'var(--status-danger)' : 'var(--text-secondary)' }}>
+                          ₹{inv.outstandingAmount.toLocaleString('en-IN')}
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span className={`badge ${
+                            inv.status === 'PAID' ? 'badge-success' :
+                            inv.status === 'PARTIALLY_PAID' ? 'badge-warning' : 'badge-danger'
+                          }`}>
+                            {inv.status}
                           </span>
-                        )}
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          {!isSettled ? (
+                            canPayment ? (
+                              <button
+                                onClick={() => openPaymentWorkspace(inv)}
+                                className="btn btn-primary btn-sm"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11.5px' }}
+                              >
+                                <Landmark size={13} /> Record Payment
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Read Only</span>
+                            )
+                          ) : (
+                            <span style={{ fontSize: '11px', color: 'var(--status-success)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <CheckSquare size={13} /> Settled
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 2: DISPATCHED ORDERS AWAITING INVOICE
+          ───────────────────────────────────────────────────────────── */}
+      {activeTab === 'pending' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {pendingOrders.length === 0 ? (
+            <div className="card" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+              <CheckCircle2 size={40} color="var(--brand-500)" style={{ marginBottom: '8px' }} />
+              <h4 style={{ margin: 0, color: 'var(--text-primary)' }}>All Dispatched Orders Invoiced</h4>
+              <p style={{ margin: '4px 0 0', fontSize: '13px' }}>No shipments currently waiting for invoice generation.</p>
+            </div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Order #</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Customer</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Items Dispatched</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Order Amount</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Dispatch Date</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: 'var(--text-tertiary)', fontSize: '11px', textTransform: 'uppercase' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingOrders.map(po => (
+                    <tr key={po.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--status-info)' }}>
+                        {po.orderNumber}
+                      </td>
+                      <td style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {po.customer?.name}
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <span className="badge badge-info">{po.items?.length || 0} line{(po.items?.length || 0) !== 1 ? 's' : ''}</span>
+                      </td>
+                      <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--brand-400)' }}>
+                        ₹{Number(po.totalAmount).toLocaleString('en-IN')}
+                      </td>
+                      <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>
+                        {new Date(po.updatedAt).toLocaleDateString('en-IN')}
+                      </td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                        <button
+                          onClick={() => handleGenerateInvoice(po.id)}
+                          className="btn btn-primary btn-sm"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <Receipt size={13} /> Generate Tax Invoice
+                        </button>
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        )}
-
-        {activeTab === 'pending' && (
-          <table style={styles.table}>
-            <thead>
-              <tr style={styles.theadRow}>
-                <th style={styles.th}>Order #</th>
-                <th style={styles.th}>Customer</th>
-                <th style={styles.th}>Amount</th>
-                <th style={styles.th}>Dispatch Date</th>
-                <th style={{ ...styles.th, textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pendingOrders.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-                    No dispatched orders waiting for invoice.
-                  </td>
-                </tr>
-              ) : (
-                pendingOrders.map(order => (
-                  <tr key={order.id} style={styles.tr}>
-                    <td style={{ ...styles.td, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#3b82f6' }}>{order.orderNumber}</td>
-                    <td style={{ ...styles.td, fontWeight: 700 }}>{order.customer?.name}</td>
-                    <td style={styles.td}>₹{order.totalAmount.toLocaleString('en-IN')}</td>
-                    <td style={styles.td}>{new Date(order.updatedAt).toLocaleDateString()}</td>
-                    <td style={{ ...styles.td, textAlign: 'right' }}>
-                      <button onClick={() => handleGenerateInvoice(order.id)} style={styles.generateBtn}>
-                        <FilePlus size={14} /> Generate Invoice
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Payment Modal */}
-      {paymentModalOpen && selectedInvoice && (
-        <div style={styles.modalOverlay}>
-          <div className="card" style={styles.modalContent}>
-            <div style={styles.modalHeader}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f8fafc' }}>
-                Record Payment
-              </h3>
-              <p style={{ fontSize: '0.875rem', color: '#94a3b8' }}>
-                Invoice <strong style={{ color: '#3b82f6' }}>{selectedInvoice.invoiceNumber}</strong>
-              </p>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          )}
+        </div>
+      )}
 
-            <div style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: 'rgba(15, 23, 42, 0.5)', borderRadius: '8px', border: '1px solid #1e293b' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Customer:</span>
-                <span style={{ color: '#f8fafc', fontWeight: 600, fontSize: '0.875rem' }}>{selectedInvoice.customer?.name}</span>
+      {/* ─────────────────────────────────────────────────────────────
+          CONTEXTUAL PAYMENT WORKSPACE MODAL
+          (Payment Entry + Customer & Invoice Intelligence)
+          ───────────────────────────────────────────────────────────── */}
+      {selectedInvoice && (
+        <Modal
+          title={`Contextual Payment Workspace — ${selectedInvoice.invoiceNumber}`}
+          onClose={() => setSelectedInvoice(null)}
+          maxWidth="860px"
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', alignItems: 'start' }}>
+            {/* LEFT: Payment Form */}
+            <form onSubmit={handlePaymentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                <div>
+                  <span className="context-kpi-label">Billed Amount</span>
+                  <span className="context-kpi-val" style={{ fontSize: '14px' }}>₹{selectedInvoice.totalAmount.toLocaleString('en-IN')}</span>
+                </div>
+                <div>
+                  <span className="context-kpi-label">Paid So Far</span>
+                  <span className="context-kpi-val" style={{ fontSize: '14px', color: 'var(--status-success)' }}>₹{selectedInvoice.amountPaid.toLocaleString('en-IN')}</span>
+                </div>
+                <div>
+                  <span className="context-kpi-label">Outstanding</span>
+                  <span className="context-kpi-val" style={{ fontSize: '14px', color: 'var(--status-danger)' }}>₹{selectedInvoice.outstandingAmount.toLocaleString('en-IN')}</span>
+                </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Outstanding Balance:</span>
-                <span style={{ color: '#ef4444', fontWeight: 700, fontSize: '0.875rem' }}>₹{selectedInvoice.outstandingAmount.toLocaleString('en-IN')}</span>
-              </div>
-            </div>
 
-            <form onSubmit={handlePaymentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Payment Amount (₹) <span style={{ color: '#ef4444' }}>*</span></label>
+              {/* Amount input */}
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="form-label">Payment Amount (₹) <span className="required">*</span></label>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentForm(prev => ({ ...prev, amount: String(selectedInvoice.outstandingAmount) }))}
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: '11px', padding: '2px 8px' }}
+                  >
+                    Pay Full Balance
+                  </button>
+                </div>
                 <input
+                  className="form-input"
                   type="number"
-                  required
+                  min="0.01"
                   step="0.01"
                   max={selectedInvoice.outstandingAmount}
                   value={paymentForm.amount}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                  style={styles.input}
-                  placeholder="Enter amount"
-                />
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Payment Method <span style={{ color: '#ef4444' }}>*</span></label>
-                <select
+                  onChange={e => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))}
                   required
-                  value={paymentForm.paymentMethod}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
-                  style={styles.input}
-                >
-                  <option value="BANK_TRANSFER">Bank Transfer (NEFT/RTGS)</option>
-                  <option value="CASH">Cash</option>
-                  <option value="CHEQUE">Cheque</option>
-                  <option value="UPI">UPI</option>
-                  <option value="OTHER">Other</option>
-                </select>
+                  style={{ fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 700 }}
+                />
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Reference Number</label>
+              {/* Payment Method */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label className="form-label">Payment Method</label>
+                  <select
+                    className="form-select"
+                    value={paymentForm.paymentMethod}
+                    onChange={e => setPaymentForm(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                  >
+                    <option value="BANK_TRANSFER">Bank Transfer (NEFT/RTGS)</option>
+                    <option value="CHEQUE">Cheque / Demand Draft</option>
+                    <option value="CASH">Cash</option>
+                    <option value="UPI">UPI / Digital Gateway</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Reference / UTR #</label>
+                  <input
+                    className="form-input"
+                    type="text"
+                    placeholder="e.g. UTR-93820184"
+                    value={paymentForm.referenceNumber}
+                    onChange={e => setPaymentForm(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="form-group">
+                <label className="form-label">Ledger Notes / Remarks</label>
                 <input
+                  className="form-input"
                   type="text"
-                  value={paymentForm.referenceNumber}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, referenceNumber: e.target.value })}
-                  style={styles.input}
-                  placeholder="Transaction ID, Cheque No, etc."
-                />
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Notes</label>
-                <textarea
+                  placeholder="e.g. Received via HDFC Bank"
                   value={paymentForm.notes}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                  style={{ ...styles.input, minHeight: '60px', resize: 'vertical' }}
-                  placeholder="Optional notes"
+                  onChange={e => setPaymentForm(prev => ({ ...prev, notes: e.target.value }))}
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setPaymentModalOpen(false)}
-                  style={styles.cancelBtn}
-                  disabled={paymentSubmitting}
-                >
+              {/* Live Credit Restoration Preview */}
+              {parseFloat(paymentForm.amount) > 0 && (
+                <div style={{ padding: '10px 14px', background: 'var(--status-success-bg)', border: '1px solid var(--status-success-border)', borderRadius: 'var(--radius-md)', fontSize: '12px', color: 'var(--status-success)' }}>
+                  ✓ <strong>Credit Impact Preview:</strong> This transaction frees up <strong>₹{parseFloat(paymentForm.amount).toLocaleString('en-IN')}</strong> back into {selectedInvoice.customer?.name}'s available credit line!
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                <button type="button" onClick={() => setSelectedInvoice(null)} className="btn btn-secondary">
                   Cancel
                 </button>
-                <button type="submit" style={styles.submitBtn} disabled={paymentSubmitting}>
-                  {paymentSubmitting ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Landmark size={16} />}
-                  Confirm Payment
+                <button type="submit" disabled={paymentSubmitting} className="btn btn-primary">
+                  {paymentSubmitting ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Landmark size={15} />}
+                  Confirm Payment Receipt
                 </button>
               </div>
             </form>
+
+            {/* RIGHT: Supporting Commercial Context */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: 'var(--surface-2)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+              {/* Customer Standing */}
+              <div>
+                <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 700, letterSpacing: '0.04em' }}>
+                  Customer Credit Health
+                </span>
+                <h4 style={{ margin: '3px 0 0', fontSize: '14.5px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {selectedInvoice.customer?.name}
+                </h4>
+                {invoiceCustomer && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-tertiary)' }}>Credit Limit:</span>
+                      <strong>₹{Number(invoiceCustomer.credit?.creditLimit || 0).toLocaleString('en-IN')}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-tertiary)' }}>Total Outstanding:</span>
+                      <strong style={{ color: 'var(--status-warning)' }}>₹{Number(invoiceCustomer.credit?.outstandingAmount || 0).toLocaleString('en-IN')}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-tertiary)' }}>Available Credit:</span>
+                      <strong style={{ color: 'var(--status-success)' }}>₹{Number(invoiceCustomer.credit?.availableCredit || 0).toLocaleString('en-IN')}</strong>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Payment History for this Invoice */}
+              <div>
+                <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 700, letterSpacing: '0.04em' }}>
+                  Previous Payments on this Invoice ({selectedInvoice.payments?.length || 0})
+                </span>
+                {(!selectedInvoice.payments || selectedInvoice.payments.length === 0) ? (
+                  <p style={{ margin: '4px 0 0', fontSize: '11.5px', color: 'var(--text-tertiary)' }}>
+                    No partial payments logged yet.
+                  </p>
+                ) : (
+                  <div className="context-table-wrap" style={{ marginTop: '6px' }}>
+                    <table className="context-table">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Amount</th>
+                          <th>Method</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedInvoice.payments.map(p => (
+                          <tr key={p.id}>
+                            <td>{new Date(p.paymentDate).toLocaleDateString('en-IN')}</td>
+                            <td style={{ fontWeight: 700, color: 'var(--status-success)', fontFamily: 'var(--font-mono)' }}>
+                              ₹{p.amount.toLocaleString('en-IN')}
+                            </td>
+                            <td>{p.paymentMethod}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Other Unpaid Invoices for this customer */}
+              {otherCustomerInvoices.length > 0 && (
+                <div>
+                  <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--status-warning)', fontWeight: 700, letterSpacing: '0.04em' }}>
+                    Other Unpaid Invoices ({otherCustomerInvoices.length})
+                  </span>
+                  <div className="context-table-wrap" style={{ marginTop: '6px' }}>
+                    <table className="context-table">
+                      <thead>
+                        <tr>
+                          <th>Invoice #</th>
+                          <th>Due Date</th>
+                          <th style={{ textAlign: 'right' }}>Outstanding</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {otherCustomerInvoices.slice(0, 3).map(oth => (
+                          <tr key={oth.id}>
+                            <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--status-info)' }}>{oth.invoiceNumber}</td>
+                            <td>{new Date(oth.dueDate).toLocaleDateString('en-IN')}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--status-danger)' }}>
+                              ₹{oth.outstandingAmount.toLocaleString('en-IN')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
 }
 
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.5rem',
+// ─── Modal Styles ─────────────────────────────────────────────────────
+const ms = {
+  overlay: {
+    position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)',
+    backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', zIndex: 1000, padding: '1rem',
+  },
+  modal: {
+    backgroundColor: 'var(--surface-1)', border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-lg)', width: '100%', maxHeight: '90vh',
+    display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-xl)',
   },
   header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)',
   },
-  title: {
-    fontSize: '1.375rem',
-    fontWeight: 800,
-    color: '#f8fafc',
+  title: { margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' },
+  closeBtn: {
+    background: 'none', border: 'none', color: 'var(--text-tertiary)',
+    cursor: 'pointer', padding: '4px', borderRadius: '4px',
   },
-  subtitle: {
-    fontSize: '0.875rem',
-    color: '#94a3b8',
-    marginTop: '0.25rem',
-  },
-  kpiGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-    gap: '1.5rem',
-  },
-  kpiCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1rem',
-    padding: '1.25rem',
-  },
-  kpiIconWrapper: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '48px',
-    height: '48px',
-    borderRadius: '12px',
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    border: '1px solid rgba(239, 68, 68, 0.2)',
-  },
-  kpiLabel: {
-    fontSize: '0.75rem',
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    fontWeight: 700,
-    marginBottom: '0.25rem',
-  },
-  kpiValue: {
-    fontSize: '1.5rem',
-    fontWeight: 800,
-    color: '#f8fafc',
-  },
-  tabs: {
-    display: 'flex',
-    gap: '1rem',
-    borderBottom: '1px solid #1e293b',
-  },
-  tab: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    padding: '0.75rem 1rem',
-    background: 'none',
-    border: 'none',
-    borderBottom: '2px solid transparent',
-    color: '#94a3b8',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  activeTab: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    padding: '0.75rem 1rem',
-    background: 'none',
-    border: 'none',
-    borderBottom: '2px solid #10b981',
-    color: '#10b981',
-    fontWeight: 700,
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    textAlign: 'left',
-    fontSize: '0.8125rem',
-  },
-  theadRow: {
-    backgroundColor: '#0f172a',
-    borderBottom: '1px solid #1e293b',
-  },
-  th: {
-    padding: '1rem 1.5rem',
-    fontWeight: 700,
-    color: '#94a3b8',
-  },
-  tr: {
-    borderBottom: '1px solid #1e293b',
-    backgroundColor: 'rgba(30, 41, 59, 0.2)',
-  },
-  td: {
-    padding: '1rem 1.5rem',
-    color: '#cbd5e1',
-  },
-  payBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '0.375rem',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    color: '#10b981',
-    border: '1px solid rgba(16, 185, 129, 0.2)',
-    padding: '0.375rem 0.75rem',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '0.75rem',
-    fontWeight: 600,
-    transition: 'all 0.2s ease',
-  },
-  generateBtn: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '0.375rem',
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    color: '#3b82f6',
-    border: '1px solid rgba(59, 130, 246, 0.2)',
-    padding: '0.375rem 0.75rem',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '0.75rem',
-    fontWeight: 600,
-    transition: 'all 0.2s ease',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-    backdropFilter: 'blur(4px)',
-  },
-  modalContent: {
-    width: '100%',
-    maxWidth: '500px',
-    padding: '2rem',
-  },
-  modalHeader: {
-    marginBottom: '1.5rem',
-  },
-  formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem',
-  },
-  label: {
-    fontSize: '0.8125rem',
-    fontWeight: 600,
-    color: '#94a3b8',
-  },
-  input: {
-    padding: '0.75rem 1rem',
-    backgroundColor: '#0f172a',
-    border: '1px solid #334155',
-    borderRadius: '8px',
-    color: '#f8fafc',
-    fontSize: '0.875rem',
-  },
-  cancelBtn: {
-    padding: '0.75rem 1.5rem',
-    backgroundColor: 'transparent',
-    color: '#94a3b8',
-    border: '1px solid #334155',
-    borderRadius: '8px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  submitBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    padding: '0.75rem 1.5rem',
-    backgroundColor: '#10b981',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '8px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
+  body: { padding: '20px', overflowY: 'auto' },
 };

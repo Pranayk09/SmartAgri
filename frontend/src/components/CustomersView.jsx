@@ -1,41 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
+import { apiGet, apiPost, apiPut, apiDelete } from '../utils/api';
 import {
-  Users,
-  CreditCard,
-  Plus,
-  Edit3,
-  Trash2,
-  Coins,
-  AlertCircle,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  Loader2,
-  X,
-  TrendingUp,
-  IndianRupee,
-  UserCheck,
-  ShieldAlert,
+  Users, CreditCard, Plus, Edit3, Trash2, Coins, AlertCircle,
+  CheckCircle2, AlertTriangle, XCircle, Loader2, X, TrendingUp,
+  IndianRupee, UserCheck, ShieldAlert, ShoppingCart, Receipt,
+  Landmark, ExternalLink, Search, Filter, Phone, Mail, MapPin,
+  Clock, CheckSquare, ChevronRight, Eye, Layers, Check
 } from 'lucide-react';
 
-// ─── Credit utilization badge helper ────────────────────────────────────────
+// ─── Credit Utilization Bar ──────────────────────────────────────────
 function UtilizationBar({ pct }) {
-  const color = pct >= 100 ? '#ef4444' : pct >= 80 ? '#f59e0b' : '#10b981';
+  const color = pct >= 100 ? 'var(--status-danger)' : pct >= 80 ? 'var(--status-warning)' : 'var(--status-success)';
   const cappedPct = Math.min(pct, 100);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-      <div style={{ flex: 1, height: '6px', borderRadius: '99px', backgroundColor: '#1e293b', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+      <div style={{ flex: 1, height: '7px', borderRadius: '99px', backgroundColor: 'var(--surface-3)', overflow: 'hidden' }}>
         <div style={{ width: `${cappedPct}%`, height: '100%', borderRadius: '99px', backgroundColor: color, transition: 'width 0.4s ease' }} />
       </div>
-      <span style={{ fontSize: '0.75rem', fontWeight: 700, color, minWidth: '38px', textAlign: 'right' }}>{pct.toFixed(1)}%</span>
+      <span style={{ fontSize: '11px', fontWeight: 700, color, minWidth: '40px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+        {pct.toFixed(1)}%
+      </span>
     </div>
   );
 }
 
-// ─── Customer type badge colors ──────────────────────────────────────────────
+// ─── Customer Type Badge ──────────────────────────────────────────────
 function TypeBadge({ type }) {
   const map = {
     DISTRIBUTOR: 'badge-info',
@@ -45,68 +36,170 @@ function TypeBadge({ type }) {
   return <span className={`badge ${map[type] || 'badge-info'}`}>{type}</span>;
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Modal Wrapper ────────────────────────────────────────────────────
+function Modal({ title, onClose, children, maxWidth = '560px' }) {
+  return (
+    <div style={ms.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ ...ms.modal, maxWidth }}>
+        <div style={ms.header}>
+          <h3 style={ms.title}>{title}</h3>
+          <button onClick={onClose} style={ms.closeBtn}><X size={18} /></button>
+        </div>
+        <div style={ms.body}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component: Customer 360 Workspace ───────────────────────────
 export default function CustomersView() {
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
 
-  const [activeTab, setActiveTab] = useState('accounts');
+  const canCreate = hasPermission('customers.create');
+  const canUpdate = hasPermission('customers.update');
+  const canDelete = hasPermission('customers.delete');
+  const canCredit = hasPermission('customers.credit');
+  const canRecordPayment = hasPermission('invoices.payment');
+
+  // Master Data
   const [customers, setCustomers] = useState([]);
-  const [creditSummary, setCreditSummary] = useState(null);
+  const [orders, setOrders] = useState([]);
+  const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [creditLoading, setCreditLoading] = useState(false);
 
-  // Modal states
+  // Selected Customer in 360 Workspace
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  const [active360Tab, setActive360Tab] = useState('orders'); // 'orders' | 'invoices' | 'payments' | 'credit'
+
+  // Search & Filter
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('ALL');
+  const [riskFilter, setRiskFilter] = useState('ALL');
+
+  // Modals
   const [showCustomerModal, setShowCustomerModal] = useState(false);
-  const [showCreditModal, setShowCreditModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null); // null = add mode
+  const [showCreditModal, setShowCreditModal] = useState(false);
   const [creditTarget, setCreditTarget] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Form states
+  // Payment Recording Modal (In-Context)
+  const [paymentModalInvoice, setPaymentModalInvoice] = useState(null);
+  const [paymentForm, setPaymentForm] = useState({ amount: '', paymentMethod: 'BANK_TRANSFER', referenceNumber: '', notes: '' });
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+
+  // Forms
   const defaultCustomerForm = {
     name: '', type: 'DISTRIBUTOR', phone: '', email: '',
     address: '', status: 'ACTIVE', creditLimit: '', paymentTermsDays: '30',
   };
   const [customerForm, setCustomerForm] = useState(defaultCustomerForm);
   const [creditForm, setCreditForm] = useState({ creditLimit: '', paymentTermsDays: '', status: 'ACTIVE' });
-  const [submitting, setSubmitting] = useState(false);
 
-  const canCreate = hasPermission('customers.create');
-  const canUpdate = hasPermission('customers.update');
-  const canDelete = hasPermission('customers.delete');
-  const canCredit = hasPermission('customers.credit');
-
-  // ─── Data Fetching ──────────────────────────────────────────────────────────
-
-  const fetchCustomers = useCallback(async () => {
+  // ─── Data Fetching ──────────────────────────────────────────────────
+  const fetchAllData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/customers');
-      if (res.data.success) setCustomers(res.data.data);
+      const [custRes, ordRes, invRes] = await Promise.all([
+        apiGet('/customers').catch(() => ({ data: [] })),
+        apiGet('/sales/orders').catch(() => ({ data: [] })),
+        apiGet('/invoices').catch(() => ({ data: [] })),
+      ]);
+      const fetchedCustomers = custRes.data || [];
+      setCustomers(fetchedCustomers);
+      setOrders(ordRes.data || []);
+      setInvoices(invRes.data || []);
+
+      // If no customer selected yet, select first active customer or read hash param
+      if (fetchedCustomers.length > 0) {
+        const hash = window.location.hash;
+        if (hash.includes('?')) {
+          const params = new URLSearchParams(hash.split('?')[1]);
+          const targetId = params.get('id');
+          if (targetId && fetchedCustomers.some(c => c.id === targetId)) {
+            setSelectedCustomerId(targetId);
+            return;
+          }
+        }
+        setSelectedCustomerId(prev => prev || fetchedCustomers[0].id);
+      }
     } catch (err) {
-      showToast(err.response?.data?.error?.message || 'Failed to load customers.', 'error');
+      showToast(err.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showToast]);
 
-  const fetchCreditSummary = useCallback(async () => {
-    setCreditLoading(true);
-    try {
-      const res = await axios.get('/api/customers/credit/summary');
-      if (res.data.success) setCreditSummary(res.data.data);
-    } catch (err) {
-      showToast(err.response?.data?.error?.message || 'Failed to load credit summary.', 'error');
-    } finally {
-      setCreditLoading(false);
-    }
-  }, []);
+  useEffect(() => {
+    fetchAllData();
+  }, [fetchAllData]);
 
-  useEffect(() => { fetchCustomers(); }, []);
-  useEffect(() => { if (activeTab === 'credit') fetchCreditSummary(); }, [activeTab]);
+  // Selected customer object
+  const selectedCustomer = useMemo(() => {
+    if (!selectedCustomerId) return null;
+    return customers.find(c => c.id === selectedCustomerId) || customers[0] || null;
+  }, [selectedCustomerId, customers]);
 
-  // ─── Customer CRUD handlers ─────────────────────────────────────────────────
+  // Orders for selected customer
+  const customerOrders = useMemo(() => {
+    if (!selectedCustomer) return [];
+    return orders.filter(o => o.customerId === selectedCustomer.id);
+  }, [selectedCustomer, orders]);
 
+  // Invoices for selected customer
+  const customerInvoices = useMemo(() => {
+    if (!selectedCustomer) return [];
+    return invoices.filter(i => i.customerId === selectedCustomer.id);
+  }, [selectedCustomer, invoices]);
+
+  // Payments for selected customer (extracted from customer invoices)
+  const customerPayments = useMemo(() => {
+    if (!customerInvoices.length) return [];
+    const list = [];
+    customerInvoices.forEach(inv => {
+      if (inv.payments && inv.payments.length) {
+        inv.payments.forEach(p => {
+          list.push({ ...p, invoiceNumber: inv.invoiceNumber, invoiceId: inv.id });
+        });
+      }
+    });
+    return list.sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate));
+  }, [customerInvoices]);
+
+  // Filtered customer accounts
+  const filteredCustomers = useMemo(() => {
+    return customers.filter(c => {
+      const matchSearch = !searchQuery ||
+        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.email?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchType = typeFilter === 'ALL' || c.type === typeFilter;
+
+      const limit = c.credit?.creditLimit || 0;
+      const outstanding = c.credit?.outstandingAmount || 0;
+      const util = limit > 0 ? (outstanding / limit) * 100 : 0;
+
+      let matchRisk = true;
+      if (riskFilter === 'HIGH_RISK') matchRisk = util >= 80 && util < 100;
+      else if (riskFilter === 'OVER_LIMIT') matchRisk = util >= 100;
+      else if (riskFilter === 'NORMAL') matchRisk = util < 80;
+
+      return matchSearch && matchType && matchRisk;
+    });
+  }, [customers, searchQuery, typeFilter, riskFilter]);
+
+  // Overall KPIs
+  const totalExposure = useMemo(() => customers.reduce((sum, c) => sum + (c.credit?.creditLimit || 0), 0), [customers]);
+  const totalOutstanding = useMemo(() => customers.reduce((sum, c) => sum + (c.credit?.outstandingAmount || 0), 0), [customers]);
+  const overLimitCount = useMemo(() => customers.filter(c => {
+    const lim = c.credit?.creditLimit || 0;
+    const out = c.credit?.outstandingAmount || 0;
+    return lim > 0 && out >= lim;
+  }).length, [customers]);
+
+  // ─── Modal Openers & Actions ────────────────────────────────────────
   const openAddModal = () => {
     setEditingCustomer(null);
     setCustomerForm(defaultCustomerForm);
@@ -128,6 +221,26 @@ export default function CustomersView() {
     setShowCustomerModal(true);
   };
 
+  const openCreditModal = (customer) => {
+    setCreditTarget(customer);
+    setCreditForm({
+      creditLimit: customer.credit?.creditLimit ?? '',
+      paymentTermsDays: customer.credit?.paymentTermsDays ?? 30,
+      status: customer.credit?.status || 'ACTIVE',
+    });
+    setShowCreditModal(true);
+  };
+
+  const openPaymentModal = (invoice) => {
+    setPaymentModalInvoice(invoice);
+    setPaymentForm({
+      amount: String(invoice.outstandingAmount || ''),
+      paymentMethod: 'BANK_TRANSFER',
+      referenceNumber: '',
+      notes: `Settlement for invoice ${invoice.invoiceNumber}`
+    });
+  };
+
   const handleCustomerSubmit = async (e) => {
     e.preventDefault();
     if (!customerForm.name.trim()) {
@@ -137,583 +250,977 @@ export default function CustomersView() {
     setSubmitting(true);
     try {
       if (editingCustomer) {
-        // Update profile only (not credit)
-        const { creditLimit, paymentTermsDays, ...profileData } = customerForm;
-        await axios.put(`/api/customers/${editingCustomer.id}`, profileData);
-        showToast('Customer profile updated successfully!', 'success');
+        const profileData = {
+          name: customerForm.name.trim(),
+          type: customerForm.type || 'DISTRIBUTOR',
+          phone: customerForm.phone?.trim() || null,
+          email: customerForm.email?.trim() || null,
+          address: customerForm.address?.trim() || null,
+          status: customerForm.status || 'ACTIVE',
+        };
+        await apiPut(`/customers/${editingCustomer.id}`, profileData);
+        showToast('Customer profile updated.', 'success');
       } else {
-        await axios.post('/api/customers', customerForm);
-        showToast('Customer created successfully!', 'success');
+        const rawLimit = customerForm.creditLimit !== '' ? parseFloat(customerForm.creditLimit) : 0;
+        const rawTerms = customerForm.paymentTermsDays !== '' ? parseInt(customerForm.paymentTermsDays, 10) : 30;
+        const payload = {
+          name: customerForm.name.trim(),
+          type: customerForm.type || 'DISTRIBUTOR',
+          phone: customerForm.phone?.trim() || null,
+          email: customerForm.email?.trim() || null,
+          address: customerForm.address?.trim() || null,
+          status: customerForm.status || 'ACTIVE',
+          creditLimit: isNaN(rawLimit) || rawLimit < 0 ? 0 : rawLimit,
+          paymentTermsDays: isNaN(rawTerms) || rawTerms < 0 ? 30 : rawTerms,
+        };
+        const res = await apiPost('/customers', payload);
+        showToast('Customer account created.', 'success');
+        if (res.data?.id) setSelectedCustomerId(res.data.id);
       }
       setShowCustomerModal(false);
-      fetchCustomers();
+      fetchAllData();
     } catch (err) {
-      showToast(err.response?.data?.error?.message || 'Operation failed.', 'error');
+      showToast(err.message, 'error');
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleDelete = async (customer) => {
-    if (!window.confirm(`Delete customer "${customer.name}"? This cannot be undone.`)) return;
-    try {
-      const res = await axios.delete(`/api/customers/${customer.id}`);
-      showToast(res.data.message || 'Customer removed.', 'success');
-      fetchCustomers();
-      if (activeTab === 'credit') fetchCreditSummary();
-    } catch (err) {
-      showToast(err.response?.data?.error?.message || 'Failed to delete customer.', 'error');
-    }
-  };
-
-  // ─── Credit management handler ──────────────────────────────────────────────
-
-  const openCreditModal = (customer) => {
-    setCreditTarget(customer);
-    setCreditForm({
-      creditLimit: customer.credit?.creditLimit ?? '',
-      paymentTermsDays: customer.credit?.paymentTermsDays ?? 30,
-      status: customer.credit?.creditStatus || 'ACTIVE',
-    });
-    setShowCreditModal(true);
   };
 
   const handleCreditSubmit = async (e) => {
     e.preventDefault();
     if (!creditTarget) return;
+    const parsedLimit = parseFloat(creditForm.creditLimit);
+    if (isNaN(parsedLimit) || parsedLimit < 0) {
+      showToast('Credit limit must be a valid non-negative number.', 'warning');
+      return;
+    }
+    const currentOutstanding = creditTarget.credit?.outstandingAmount || 0;
+    if (parsedLimit < currentOutstanding) {
+      showToast(`Credit limit (₹${parsedLimit.toLocaleString('en-IN')}) cannot be less than current outstanding balance (₹${currentOutstanding.toLocaleString('en-IN')}).`, 'warning');
+      return;
+    }
     setSubmitting(true);
     try {
-      await axios.put(`/api/customers/${creditTarget.id}/credit`, creditForm);
-      showToast('Credit limit updated successfully!', 'success');
+      await apiPut(`/customers/${creditTarget.id}/credit`, {
+        creditLimit: parsedLimit,
+        paymentTermsDays: parseInt(creditForm.paymentTermsDays, 10) || 30,
+        status: creditForm.status || 'ACTIVE',
+      });
+      showToast('Credit limit updated successfully.', 'success');
       setShowCreditModal(false);
-      fetchCustomers();
-      if (activeTab === 'credit') fetchCreditSummary();
+      fetchAllData();
     } catch (err) {
-      showToast(err.response?.data?.error?.message || 'Failed to update credit limit.', 'error');
+      showToast(err.message, 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  const handleDeleteCustomer = async (customer) => {
+    if (!window.confirm(`Delete customer "${customer.name}"? If order history exists, customer will be deactivated.`)) return;
+    try {
+      const res = await apiDelete(`/customers/${customer.id}`);
+      showToast(res.message || 'Customer record updated.', 'success');
+      fetchAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const handlePaymentSubmit = async (e) => {
+    e.preventDefault();
+    if (!paymentModalInvoice) return;
+    const amount = parseFloat(paymentForm.amount);
+    if (isNaN(amount) || amount <= 0) {
+      showToast('Enter a valid payment amount.', 'warning');
+      return;
+    }
+    if (amount > paymentModalInvoice.outstandingAmount) {
+      showToast(`Payment exceeds outstanding amount (₹${paymentModalInvoice.outstandingAmount}).`, 'warning');
+      return;
+    }
+
+    setPaymentSubmitting(true);
+    try {
+      await apiPost(`/invoices/${paymentModalInvoice.id}/payments`, {
+        amount,
+        paymentMethod: paymentForm.paymentMethod,
+        referenceNumber: paymentForm.referenceNumber,
+        notes: paymentForm.notes
+      });
+      showToast(`Payment of ₹${amount.toLocaleString('en-IN')} recorded. Customer credit restored!`, 'success');
+      setPaymentModalInvoice(null);
+      fetchAllData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  };
+
+  if (loading && customers.length === 0) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '5rem' }}>
+        <Loader2 size={36} color="var(--brand-500)" style={{ animation: 'spin 1s linear infinite' }} />
+      </div>
+    );
+  }
+
+  // ─── Selected Customer Credit Calculations ──────────────────────────
+  const selCredit = selectedCustomer?.credit;
+  const selLimit = selCredit?.creditLimit || 0;
+  const selOutstanding = selCredit?.outstandingAmount || 0;
+  const selAvailable = selCredit ? (selCredit.availableCredit ?? (selLimit - selOutstanding)) : 0;
+  const selUtil = selLimit > 0 ? (selOutstanding / selLimit) * 100 : 0;
+  const selUtilColor = selUtil >= 100 ? 'var(--status-danger)' : selUtil >= 80 ? 'var(--status-warning)' : 'var(--status-success)';
 
   return (
-    <div style={styles.container}>
-      {/* Header */}
-      <div style={styles.header}>
+    <div className="workspace-container">
+      {/* Top Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h2 style={styles.title}>Customers & Credit Management</h2>
-          <p style={styles.subtitle}>
-            Manage distributor accounts, payment terms, credit lines, and real-time outstanding balances.
+          <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0 }}>
+            Customer Accounts & 360 Workspace
+          </h2>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+            Comprehensive commercial intelligence: credit exposure, complete order history, invoice ledger, and payment tracking.
           </p>
         </div>
+
         {canCreate && (
-          <button onClick={openAddModal} style={styles.addBtn}>
-            <Plus size={16} /> Add Customer
+          <button onClick={openAddModal} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Plus size={16} /> New Customer Account
           </button>
         )}
       </div>
 
-      {/* Tabs */}
-      <div style={styles.tabsContainer}>
-        {[
-          { key: 'accounts', label: `Customer Accounts (${customers.length})` },
-          { key: 'credit',   label: 'Credit Dashboard' },
-        ].map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            style={{
-              ...styles.tab,
-              borderBottom: activeTab === key ? '2px solid #10b981' : '2px solid transparent',
-              color: activeTab === key ? '#10b981' : '#94a3b8',
-            }}
-          >
-            {label}
-          </button>
-        ))}
+      {/* KPI Overview Strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Total Registered Customers
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+            {customers.length}
+          </p>
+        </div>
+
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Total Credit Limit Exposure
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: 'var(--status-info)', fontFamily: 'var(--font-mono)' }}>
+            ₹{totalExposure.toLocaleString('en-IN')}
+          </p>
+        </div>
+
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Total Outstanding Receivables
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: 'var(--status-warning)', fontFamily: 'var(--font-mono)' }}>
+            ₹{totalOutstanding.toLocaleString('en-IN')}
+          </p>
+        </div>
+
+        <div className="card" style={{ padding: '16px', background: 'var(--surface-1)' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Accounts Over Credit Limit
+          </span>
+          <p style={{ margin: '4px 0 0', fontSize: '22px', fontWeight: 800, color: overLimitCount > 0 ? 'var(--status-danger)' : 'var(--status-success)', fontFamily: 'var(--font-mono)' }}>
+            {overLimitCount}
+          </p>
+        </div>
       </div>
 
-      {/* ── TAB: Customer Accounts ── */}
-      {activeTab === 'accounts' && (
-        loading ? (
-          <div style={styles.loadingState}>
-            <Loader2 size={32} style={styles.spinner} />
-            <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Loading customers...</p>
+      {/* Two-Column Master-Detail 360 Workspace */}
+      <div className="workspace-split-equal">
+        {/* LEFT COLUMN: Customer Directory */}
+        <div className="workspace-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Customer Accounts ({filteredCustomers.length})
+            </span>
           </div>
-        ) : customers.length === 0 ? (
-          <div className="card" style={styles.emptyState}>
-            <Users size={48} color="#475569" style={{ marginBottom: '1rem' }} />
-            <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>No customers added yet.</p>
-            {canCreate && (
-              <button onClick={openAddModal} style={{ ...styles.addBtn, marginTop: '1rem' }}>
-                <Plus size={14} /> Add First Customer
-              </button>
-            )}
+
+          {/* Search */}
+          <div style={{ position: 'relative' }}>
+            <Search size={14} color="var(--text-tertiary)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+            <input
+              className="form-input"
+              type="text"
+              placeholder="Search by name, phone, email..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{ paddingLeft: '32px', fontSize: '12.5px' }}
+            />
           </div>
-        ) : (
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <table style={styles.table}>
-              <thead>
-                <tr style={styles.theadRow}>
-                  <th style={styles.th}>Customer Name</th>
-                  <th style={styles.th}>Type</th>
-                  <th style={styles.th}>Phone</th>
-                  <th style={styles.th}>Email</th>
-                  <th style={styles.th}>Credit Limit</th>
-                  <th style={styles.th}>Outstanding</th>
-                  <th style={styles.th}>Available</th>
-                  <th style={styles.th}>Terms</th>
-                  <th style={styles.th}>Status</th>
-                  <th style={{ ...styles.th, textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {customers.map((c) => {
-                  const avail = c.credit?.availableCredit ?? 0;
-                  const outstanding = c.credit?.outstandingAmount ?? 0;
-                  const limit = c.credit?.creditLimit ?? 0;
-                  const overrun = outstanding > limit;
-                  const nearLimit = limit > 0 && (outstanding / limit) >= 0.8;
 
-                  return (
-                    <tr key={c.id} style={styles.tr}>
-                      <td style={{ ...styles.td, fontWeight: 700, color: '#f8fafc' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          {overrun && <AlertCircle size={14} color="#ef4444" title="Over credit limit!" />}
-                          {!overrun && nearLimit && <AlertTriangle size={14} color="#f59e0b" title="Near limit (>80%)" />}
-                          {c.name}
-                        </div>
-                      </td>
-                      <td style={styles.td}><TypeBadge type={c.type} /></td>
-                      <td style={{ ...styles.td, color: '#64748b' }}>{c.phone || '—'}</td>
-                      <td style={{ ...styles.td, color: '#64748b' }}>{c.email || '—'}</td>
-                      <td style={styles.td}>₹{limit.toLocaleString('en-IN')}</td>
-                      <td style={{ ...styles.td, color: overrun ? '#ef4444' : nearLimit ? '#f59e0b' : '#cbd5e1', fontWeight: overrun || nearLimit ? 700 : 400 }}>
-                        ₹{outstanding.toLocaleString('en-IN')}
-                      </td>
-                      <td style={{ ...styles.td, color: avail > 0 ? '#10b981' : '#ef4444', fontWeight: 700 }}>
-                        ₹{avail.toLocaleString('en-IN')}
-                      </td>
-                      <td style={styles.td}>{c.credit?.paymentTermsDays ?? '—'} Days</td>
-                      <td style={styles.td}>
-                        <span className={`badge ${c.status === 'ACTIVE' ? 'badge-success' : 'badge-danger'}`}>
-                          {c.status}
-                        </span>
-                      </td>
-                      <td style={{ ...styles.td, textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                          {canCredit && (
-                            <button onClick={() => openCreditModal(c)} style={styles.creditBtn} title="Adjust Credit Limit">
-                              <Coins size={12} /> Credit
-                            </button>
-                          )}
-                          {canUpdate && (
-                            <button onClick={() => openEditModal(c)} style={styles.editBtn} title="Edit Customer">
-                              <Edit3 size={12} />
-                            </button>
-                          )}
-                          {canDelete && (
-                            <button onClick={() => handleDelete(c)} style={styles.deleteBtn} title="Delete Customer">
-                              <Trash2 size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          {/* Filters */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <select className="form-select" value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ fontSize: '12px' }}>
+              <option value="ALL">All Types</option>
+              <option value="DISTRIBUTOR">Distributors</option>
+              <option value="DEALER">Dealers</option>
+              <option value="RETAILER">Retailers</option>
+            </select>
+
+            <select className="form-select" value={riskFilter} onChange={e => setRiskFilter(e.target.value)} style={{ fontSize: '12px' }}>
+              <option value="ALL">All Risk Statuses</option>
+              <option value="NORMAL">Normal (&lt;80%)</option>
+              <option value="HIGH_RISK">Near Limit (&gt;=80%)</option>
+              <option value="OVER_LIMIT">Over Limit (&gt;=100%)</option>
+            </select>
           </div>
-        )
-      )}
 
-      {/* ── TAB: Credit Dashboard ── */}
-      {activeTab === 'credit' && (
-        creditLoading ? (
-          <div style={styles.loadingState}>
-            <Loader2 size={32} style={styles.spinner} />
-            <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Loading credit data...</p>
-          </div>
-        ) : creditSummary ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {/* KPI Cards */}
-            <div style={styles.kpiGrid}>
-              <div style={{ ...styles.kpiCard, borderColor: 'rgba(99, 102, 241, 0.3)', background: 'rgba(99, 102, 241, 0.05)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
-                  <div style={{ ...styles.kpiIcon, background: 'rgba(99, 102, 241, 0.15)' }}><IndianRupee size={18} color="#6366f1" /></div>
-                  <span style={styles.kpiLabel}>Total Credit Exposure</span>
-                </div>
-                <div style={{ ...styles.kpiValue, color: '#6366f1' }}>₹{(creditSummary.summary.totalCreditExposure / 100000).toFixed(1)}L</div>
-                <div style={styles.kpiSub}>across {creditSummary.summary.totalCustomers} customers</div>
+          {/* Customer Cards List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>
+            {filteredCustomers.length === 0 ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '12px' }}>
+                No customers match active filters.
               </div>
+            ) : (
+              filteredCustomers.map(c => {
+                const isSelected = selectedCustomerId === c.id;
+                const lim = c.credit?.creditLimit || 0;
+                const out = c.credit?.outstandingAmount || 0;
+                const util = lim > 0 ? (out / lim) * 100 : 0;
+                const isOver = out > lim;
 
-              <div style={{ ...styles.kpiCard, borderColor: 'rgba(245, 158, 11, 0.3)', background: 'rgba(245, 158, 11, 0.05)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
-                  <div style={{ ...styles.kpiIcon, background: 'rgba(245, 158, 11, 0.15)' }}><TrendingUp size={18} color="#f59e0b" /></div>
-                  <span style={styles.kpiLabel}>Total Outstanding</span>
-                </div>
-                <div style={{ ...styles.kpiValue, color: '#f59e0b' }}>₹{(creditSummary.summary.totalOutstanding / 100000).toFixed(1)}L</div>
-                <div style={styles.kpiSub}>total receivables across org</div>
-              </div>
-
-              <div style={{ ...styles.kpiCard, borderColor: 'rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.05)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
-                  <div style={{ ...styles.kpiIcon, background: 'rgba(239, 68, 68, 0.15)' }}><XCircle size={18} color="#ef4444" /></div>
-                  <span style={styles.kpiLabel}>Over-Limit Customers</span>
-                </div>
-                <div style={{ ...styles.kpiValue, color: '#ef4444' }}>{creditSummary.summary.overLimitCount}</div>
-                <div style={styles.kpiSub}>exceeded their credit limit</div>
-              </div>
-
-              <div style={{ ...styles.kpiCard, borderColor: 'rgba(16, 185, 129, 0.3)', background: 'rgba(16, 185, 129, 0.05)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
-                  <div style={{ ...styles.kpiIcon, background: 'rgba(16, 185, 129, 0.15)' }}><CheckCircle2 size={18} color="#10b981" /></div>
-                  <span style={styles.kpiLabel}>Total Available Credit</span>
-                </div>
-                <div style={{ ...styles.kpiValue, color: '#10b981' }}>₹{(creditSummary.summary.totalAvailable / 100000).toFixed(1)}L</div>
-                <div style={styles.kpiSub}>{creditSummary.summary.nearLimitCount} near-limit (≥80%)</div>
-              </div>
-            </div>
-
-            {/* Credit Utilization Table */}
-            {creditSummary.customers.length > 0 && (
-              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <div style={styles.cardHeader}>
-                  <CreditCard size={18} color="#6366f1" />
-                  <h3 style={styles.cardTitle}>Customer Credit Utilization</h3>
-                  <span style={{ fontSize: '0.75rem', color: '#475569', marginLeft: 'auto' }}>Sorted by highest utilization</span>
-                </div>
-                <table style={styles.table}>
-                  <thead>
-                    <tr style={styles.theadRow}>
-                      <th style={styles.th}>Customer</th>
-                      <th style={styles.th}>Type</th>
-                      <th style={styles.th}>Credit Limit</th>
-                      <th style={styles.th}>Outstanding</th>
-                      <th style={styles.th}>Available</th>
-                      <th style={{ ...styles.th, minWidth: '160px' }}>Utilization</th>
-                      <th style={styles.th}>Terms</th>
-                      <th style={styles.th}>Credit Status</th>
-                      {canCredit && <th style={{ ...styles.th, textAlign: 'right' }}>Manage</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {creditSummary.customers.map((c) => {
-                      const overrun = c.outstandingAmount > c.creditLimit;
-                      const nearLimit = c.utilizationPct >= 80 && !overrun;
-                      return (
-                        <tr key={c.customerId} style={styles.tr}>
-                          <td style={{ ...styles.td, fontWeight: 700, color: '#f8fafc' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                              {overrun && <ShieldAlert size={14} color="#ef4444" />}
-                              {nearLimit && <AlertTriangle size={14} color="#f59e0b" />}
-                              {!overrun && !nearLimit && <UserCheck size={14} color="#10b981" />}
-                              {c.customerName}
-                            </div>
-                          </td>
-                          <td style={styles.td}><TypeBadge type={c.customerType} /></td>
-                          <td style={styles.td}>₹{c.creditLimit.toLocaleString('en-IN')}</td>
-                          <td style={{ ...styles.td, color: overrun ? '#ef4444' : nearLimit ? '#f59e0b' : '#cbd5e1', fontWeight: overrun ? 700 : 400 }}>
-                            ₹{c.outstandingAmount.toLocaleString('en-IN')}
-                          </td>
-                          <td style={{ ...styles.td, color: c.availableCredit >= 0 ? '#10b981' : '#ef4444', fontWeight: 700 }}>
-                            ₹{c.availableCredit.toLocaleString('en-IN')}
-                          </td>
-                          <td style={styles.td}>
-                            <UtilizationBar pct={overrun ? 100 + ((c.outstandingAmount - c.creditLimit) / c.creditLimit) * 100 : c.utilizationPct} />
-                          </td>
-                          <td style={styles.td}>{c.paymentTermsDays} Days</td>
-                          <td style={styles.td}>
-                            <span className={`badge ${c.creditStatus === 'ACTIVE' ? 'badge-success' : c.creditStatus === 'SUSPENDED' ? 'badge-danger' : 'badge-warning'}`}>
-                              {c.creditStatus}
-                            </span>
-                          </td>
-                          {canCredit && (
-                            <td style={{ ...styles.td, textAlign: 'right' }}>
-                              <button
-                                onClick={() => {
-                                  const full = customers.find((cu) => cu.id === c.customerId);
-                                  if (full) openCreditModal(full);
-                                }}
-                                style={styles.creditBtn}
-                              >
-                                <Coins size={12} /> Adjust
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div style={styles.emptyState}>
-            <CreditCard size={40} color="#475569" style={{ marginBottom: '0.75rem' }} />
-            <p style={{ color: '#94a3b8' }}>No credit data available.</p>
-          </div>
-        )
-      )}
-
-      {/* ══ ADD / EDIT CUSTOMER MODAL ═══════════════════════════════════════════ */}
-      {showCustomerModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modalCard}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>
-                {editingCustomer ? `Edit: ${editingCustomer.name}` : 'Add New Customer'}
-              </h3>
-              <button onClick={() => setShowCustomerModal(false)} style={styles.closeBtn}><X size={18} /></button>
-            </div>
-
-            <form onSubmit={handleCustomerSubmit} style={styles.form}>
-              {/* Name + Type */}
-              <div style={styles.formRow}>
-                <div style={{ ...styles.formGroup, flex: 2 }}>
-                  <label style={styles.label}>Customer Name <span style={{ color: '#ef4444' }}>*</span></label>
-                  <input
-                    type="text"
-                    style={styles.input}
-                    placeholder="e.g. Hindustan Agro Distributors"
-                    value={customerForm.name}
-                    onChange={(e) => setCustomerForm((p) => ({ ...p, name: e.target.value }))}
-                    required
-                  />
-                </div>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>Type <span style={{ color: '#ef4444' }}>*</span></label>
-                  <select style={styles.select} value={customerForm.type} onChange={(e) => setCustomerForm((p) => ({ ...p, type: e.target.value }))}>
-                    <option value="DISTRIBUTOR">Distributor</option>
-                    <option value="DEALER">Dealer</option>
-                    <option value="RETAILER">Retailer</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Phone + Email */}
-              <div style={styles.formRow}>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>Phone</label>
-                  <input type="tel" style={styles.input} placeholder="+91 98765 43210"
-                    value={customerForm.phone} onChange={(e) => setCustomerForm((p) => ({ ...p, phone: e.target.value }))} />
-                </div>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>Email</label>
-                  <input type="email" style={styles.input} placeholder="contact@company.com"
-                    value={customerForm.email} onChange={(e) => setCustomerForm((p) => ({ ...p, email: e.target.value }))} />
-                </div>
-              </div>
-
-              {/* Address */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Address</label>
-                <input type="text" style={styles.input} placeholder="City, State"
-                  value={customerForm.address} onChange={(e) => setCustomerForm((p) => ({ ...p, address: e.target.value }))} />
-              </div>
-
-              {/* Credit Limit + Payment Terms — only on create */}
-              {!editingCustomer && (
-                <div style={{ ...styles.formGroup, backgroundColor: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '10px', padding: '1rem' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6366f1', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                    <CreditCard size={14} /> Credit Configuration
-                  </div>
-                  <div style={styles.formRow}>
-                    <div style={{ ...styles.formGroup, flex: 1 }}>
-                      <label style={styles.label}>Credit Limit (₹)</label>
-                      <input type="number" min="0" step="1000" style={styles.input} placeholder="500000"
-                        value={customerForm.creditLimit} onChange={(e) => setCustomerForm((p) => ({ ...p, creditLimit: e.target.value }))} />
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => setSelectedCustomerId(c.id)}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 'var(--radius-md)',
+                      background: isSelected ? 'var(--surface-2)' : 'var(--surface-1)',
+                      border: `1px solid ${isSelected ? 'var(--brand-500)' : 'var(--border-subtle)'}`,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      boxShadow: isSelected ? 'var(--shadow-sm)' : 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 700, fontSize: '13.5px', color: isSelected ? 'var(--brand-400)' : 'var(--text-primary)' }}>
+                        {c.name}
+                      </span>
+                      <TypeBadge type={c.type} />
                     </div>
-                    <div style={{ ...styles.formGroup, flex: 1 }}>
-                      <label style={styles.label}>Payment Terms (Days)</label>
-                      <input type="number" min="0" max="365" style={styles.input} placeholder="30"
-                        value={customerForm.paymentTermsDays} onChange={(e) => setCustomerForm((p) => ({ ...p, paymentTermsDays: e.target.value }))} />
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                      <span>Outstanding: <strong style={{ color: isOver ? 'var(--status-danger)' : 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>₹{out.toLocaleString('en-IN')}</strong></span>
+                      <span>Limit: ₹{lim.toLocaleString('en-IN')}</span>
+                    </div>
+
+                    <UtilizationBar pct={util} />
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '8px', borderTop: '1px solid var(--border-subtle)', paddingTop: '6px' }} onClick={e => e.stopPropagation()}>
+                      {canCredit && (
+                        <button
+                          onClick={() => openCreditModal(c)}
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: '2px 8px', fontSize: '11px', color: 'var(--status-warning)' }}
+                          title="Adjust Credit Limit"
+                        >
+                          <Coins size={12} /> Credit
+                        </button>
+                      )}
+                      {canUpdate && (
+                        <button
+                          onClick={() => openEditModal(c)}
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: '2px 8px', fontSize: '11px', color: 'var(--text-secondary)' }}
+                          title="Edit Customer Profile"
+                        >
+                          <Edit3 size={12} /> Edit
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Customer 360 Contextual Console */}
+        <div className="workspace-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {!selectedCustomer ? (
+            <div className="context-empty" style={{ padding: '5rem' }}>
+              <Users size={48} color="var(--text-tertiary)" />
+              <h4 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)' }}>Select a Customer</h4>
+              <p style={{ margin: 0, fontSize: '13px' }}>Click any customer on the left to inspect their 360 workspace.</p>
+            </div>
+          ) : (
+            <div>
+              {/* Profile Header & Action Toolbar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '16px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      {selectedCustomer.name}
+                    </h3>
+                    <TypeBadge type={selectedCustomer.type} />
+                    <span className={`badge ${selectedCustomer.status === 'ACTIVE' ? 'badge-success' : 'badge-danger'}`}>
+                      {selectedCustomer.status}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '6px', fontSize: '12px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                    {selectedCustomer.phone && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Phone size={12} color="var(--text-tertiary)" /> {selectedCustomer.phone}
+                      </span>
+                    )}
+                    {selectedCustomer.email && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Mail size={12} color="var(--text-tertiary)" /> {selectedCustomer.email}
+                      </span>
+                    )}
+                    {selectedCustomer.address && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <MapPin size={12} color="var(--text-tertiary)" /> {selectedCustomer.address}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Quick Commercial Actions */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <a
+                    href={`#sales?customerId=${selectedCustomer.id}`}
+                    className="btn btn-primary btn-sm"
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <ShoppingCart size={13} /> Create Sales Order
+                  </a>
+
+                  {canCredit && (
+                    <button onClick={() => openCreditModal(selectedCustomer)} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Coins size={13} /> Adjust Credit
+                    </button>
+                  )}
+
+                  {canUpdate && (
+                    <button onClick={() => openEditModal(selectedCustomer)} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }} title="Edit Profile">
+                      <Edit3 size={13} /> Edit Profile
+                    </button>
+                  )}
+
+                  {canDelete && (
+                    <button onClick={() => handleDeleteCustomer(selectedCustomer)} className="btn btn-ghost btn-sm" style={{ color: 'var(--status-danger)' }} title="Delete or Deactivate">
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Authoritative Financial Standing Banner */}
+              <div className="context-kpi-grid" style={{ marginBottom: '16px' }}>
+                <div className="context-kpi-cell">
+                  <span className="context-kpi-label">Credit Limit Line</span>
+                  <span className="context-kpi-val">₹{selLimit.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="context-kpi-cell">
+                  <span className="context-kpi-label">Current Outstanding</span>
+                  <span className="context-kpi-val" style={{ color: 'var(--status-warning)' }}>
+                    ₹{selOutstanding.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="context-kpi-cell">
+                  <span className="context-kpi-label">Available Credit</span>
+                  <span className="context-kpi-val" style={{ color: selAvailable >= 0 ? 'var(--status-success)' : 'var(--status-danger)' }}>
+                    ₹{selAvailable.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="context-kpi-cell">
+                  <span className="context-kpi-label">Payment Terms Policy</span>
+                  <span className="context-kpi-val" style={{ fontSize: '14px' }}>
+                    {selCredit?.paymentTermsDays || 30} Days Net
+                  </span>
+                </div>
+              </div>
+
+              {/* Utilization Meter */}
+              <div style={{ marginBottom: '20px', padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700 }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Credit Line Exposure Utilization</span>
+                  <span style={{ color: selUtilColor, fontFamily: 'var(--font-mono)' }}>{selUtil.toFixed(1)}%</span>
+                </div>
+                <div className="context-utilization-meter" style={{ height: '9px', marginTop: '8px' }}>
+                  <div className="context-utilization-fill" style={{ width: `${Math.min(selUtil, 100)}%`, backgroundColor: selUtilColor }} />
+                </div>
+              </div>
+
+              {/* Contextual Tabs Navigation */}
+              <div className="context-nav-tabs">
+                <button
+                  type="button"
+                  className={`context-nav-tab ${active360Tab === 'orders' ? 'active' : ''}`}
+                  onClick={() => setActive360Tab('orders')}
+                >
+                  <ShoppingCart size={14} /> Orders ({customerOrders.length})
+                </button>
+                <button
+                  type="button"
+                  className={`context-nav-tab ${active360Tab === 'invoices' ? 'active' : ''}`}
+                  onClick={() => setActive360Tab('invoices')}
+                >
+                  <Receipt size={14} /> Invoices Ledger ({customerInvoices.length})
+                </button>
+                <button
+                  type="button"
+                  className={`context-nav-tab ${active360Tab === 'payments' ? 'active' : ''}`}
+                  onClick={() => setActive360Tab('payments')}
+                >
+                  <Landmark size={14} /> Payment Receipts ({customerPayments.length})
+                </button>
+                <button
+                  type="button"
+                  className={`context-nav-tab ${active360Tab === 'credit' ? 'active' : ''}`}
+                  onClick={() => setActive360Tab('credit')}
+                >
+                  <ShieldAlert size={14} /> Credit & Terms Policy
+                </button>
+              </div>
+
+              {/* ────────────────────────────────────────────────────────
+                  TAB 1: ORDER HISTORY
+                  ──────────────────────────────────────────────────────── */}
+              {active360Tab === 'orders' && (
+                <div>
+                  {customerOrders.length === 0 ? (
+                    <div className="context-empty">
+                      <ShoppingCart size={32} color="var(--text-tertiary)" />
+                      <p style={{ margin: 0, fontWeight: 600, color: 'var(--text-primary)' }}>No Orders Placed Yet</p>
+                      <p style={{ margin: 0, fontSize: '12px' }}>This customer has not placed any sales orders.</p>
+                      <a href={`#sales?customerId=${selectedCustomer.id}`} className="btn btn-primary btn-sm" style={{ marginTop: '8px' }}>
+                        <Plus size={13} /> Create Initial Order
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="context-table-wrap">
+                      <table className="context-table">
+                        <thead>
+                          <tr>
+                            <th>Order #</th>
+                            <th>Date</th>
+                            <th>Items</th>
+                            <th>Total Amount</th>
+                            <th>Status</th>
+                            <th style={{ textAlign: 'right' }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {customerOrders.map(o => (
+                            <tr key={o.id}>
+                              <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--status-info)' }}>
+                                {o.orderNumber}
+                              </td>
+                              <td>{new Date(o.orderDate).toLocaleDateString('en-IN')}</td>
+                              <td>{o.items?.length || 0} line item{(o.items?.length || 0) !== 1 ? 's' : ''}</td>
+                              <td style={{ fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--brand-400)' }}>
+                                ₹{Number(o.totalAmount).toLocaleString('en-IN')}
+                              </td>
+                              <td>
+                                <span className={`badge ${
+                                  o.status === 'DRAFT' ? 'badge-warning' :
+                                  o.status === 'CONFIRMED' ? 'badge-info' :
+                                  o.status === 'DISPATCHED' ? 'badge-success' : 'badge-neutral'
+                                }`}>
+                                  {o.status}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                <a
+                                  href="#sales"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '4px 8px', fontSize: '11px' }}
+                                >
+                                  View in Sales Desk
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ────────────────────────────────────────────────────────
+                  TAB 2: INVOICES LEDGER
+                  ──────────────────────────────────────────────────────── */}
+              {active360Tab === 'invoices' && (
+                <div>
+                  {customerInvoices.length === 0 ? (
+                    <div className="context-empty">
+                      <Receipt size={32} color="var(--text-tertiary)" />
+                      <p style={{ margin: 0, fontWeight: 600, color: 'var(--text-primary)' }}>No Invoices Generated</p>
+                      <p style={{ margin: 0, fontSize: '12px' }}>No tax invoices have been issued for this customer yet.</p>
+                    </div>
+                  ) : (
+                    <div className="context-table-wrap">
+                      <table className="context-table">
+                        <thead>
+                          <tr>
+                            <th>Invoice #</th>
+                            <th>Sales Order</th>
+                            <th>Due Date</th>
+                            <th>Total</th>
+                            <th>Paid</th>
+                            <th>Outstanding</th>
+                            <th>Status</th>
+                            <th style={{ textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {customerInvoices.map(inv => (
+                            <tr key={inv.id}>
+                              <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--status-info)' }}>
+                                {inv.invoiceNumber}
+                              </td>
+                              <td style={{ color: 'var(--text-tertiary)' }}>{inv.salesOrder?.orderNumber || '—'}</td>
+                              <td>{new Date(inv.dueDate).toLocaleDateString('en-IN')}</td>
+                              <td style={{ fontFamily: 'var(--font-mono)' }}>₹{inv.totalAmount.toLocaleString('en-IN')}</td>
+                              <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--status-success)' }}>₹{inv.amountPaid.toLocaleString('en-IN')}</td>
+                              <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: inv.outstandingAmount > 0 ? 'var(--status-danger)' : 'var(--text-secondary)' }}>
+                                ₹{inv.outstandingAmount.toLocaleString('en-IN')}
+                              </td>
+                              <td>
+                                <span className={`badge ${
+                                  inv.status === 'PAID' ? 'badge-success' :
+                                  inv.status === 'PARTIALLY_PAID' ? 'badge-warning' : 'badge-danger'
+                                }`}>
+                                  {inv.status}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                {inv.outstandingAmount > 0 && canRecordPayment && (
+                                  <button
+                                    onClick={() => openPaymentModal(inv)}
+                                    className="btn btn-primary btn-sm"
+                                    style={{ fontSize: '11px', padding: '4px 8px' }}
+                                  >
+                                    <Landmark size={12} /> Record Payment
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ────────────────────────────────────────────────────────
+                  TAB 3: PAYMENT RECORDS
+                  ──────────────────────────────────────────────────────── */}
+              {active360Tab === 'payments' && (
+                <div>
+                  {customerPayments.length === 0 ? (
+                    <div className="context-empty">
+                      <Landmark size={32} color="var(--text-tertiary)" />
+                      <p style={{ margin: 0, fontWeight: 600, color: 'var(--text-primary)' }}>No Payment Records</p>
+                      <p style={{ margin: 0, fontSize: '12px' }}>No payment receipts logged for this customer account.</p>
+                    </div>
+                  ) : (
+                    <div className="context-table-wrap">
+                      <table className="context-table">
+                        <thead>
+                          <tr>
+                            <th>Payment Date</th>
+                            <th>Invoice #</th>
+                            <th>Amount Collected</th>
+                            <th>Method</th>
+                            <th>Reference #</th>
+                            <th>Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {customerPayments.map(p => (
+                            <tr key={p.id}>
+                              <td>{new Date(p.paymentDate).toLocaleDateString('en-IN')}</td>
+                              <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--status-info)' }}>
+                                {p.invoiceNumber}
+                              </td>
+                              <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--status-success)' }}>
+                                ₹{p.amount.toLocaleString('en-IN')}
+                              </td>
+                              <td>
+                                <span className="badge badge-neutral" style={{ fontSize: '10px' }}>
+                                  {p.paymentMethod}
+                                </span>
+                              </td>
+                              <td style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                {p.referenceNumber || '—'}
+                              </td>
+                              <td style={{ color: 'var(--text-tertiary)', fontSize: '11.5px' }}>
+                                {p.notes || '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ────────────────────────────────────────────────────────
+                  TAB 4: CREDIT POLICY & AUDIT
+                  ──────────────────────────────────────────────────────── */}
+              {active360Tab === 'credit' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ padding: '14px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                    <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      Authoritative Credit Calculation Formula
+                    </h4>
+                    <p style={{ margin: '6px 0 0', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      <code>Available Credit = Credit Limit (₹{selLimit.toLocaleString('en-IN')}) - Outstanding Balance (₹{selOutstanding.toLocaleString('en-IN')}) = ₹{selAvailable.toLocaleString('en-IN')}</code>
+                    </p>
+                    <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                      New sales orders are automatically blocked by the business engine whenever order amount exceeds available credit. Outstanding balance increments upon order dispatch and is restored upon payment logging.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                    <div style={{ padding: '12px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                      <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 700 }}>Payment Terms</span>
+                      <p style={{ margin: '4px 0 0', fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {selCredit?.paymentTermsDays || 30} Calendar Days
+                      </p>
+                    </div>
+
+                    <div style={{ padding: '12px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                      <span style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontWeight: 700 }}>Account Credit Status</span>
+                      <p style={{ margin: '4px 0 0', fontSize: '14px', fontWeight: 700, color: 'var(--status-success)' }}>
+                        {selCredit?.status || 'ACTIVE'}
+                      </p>
                     </div>
                   </div>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      </div>
 
-              {/* Status */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Status</label>
-                <select style={styles.select} value={customerForm.status} onChange={(e) => setCustomerForm((p) => ({ ...p, status: e.target.value }))}>
-                  <option value="ACTIVE">Active</option>
-                  <option value="INACTIVE">Inactive</option>
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADD / EDIT CUSTOMER
+          ───────────────────────────────────────────────────────────── */}
+      {showCustomerModal && (
+        <Modal
+          title={editingCustomer ? `Edit Customer Profile: ${editingCustomer.name}` : 'New Customer Account'}
+          onClose={() => setShowCustomerModal(false)}
+        >
+          <form onSubmit={handleCustomerSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="form-group">
+              <label className="form-label">Customer Legal Name <span className="required">*</span></label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="e.g. Kaveri Agro Supplies Ltd."
+                value={customerForm.name}
+                onChange={e => setCustomerForm(prev => ({ ...prev, name: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-group">
+                <label className="form-label">Customer Type</label>
+                <select
+                  className="form-select"
+                  value={customerForm.type}
+                  onChange={e => setCustomerForm(prev => ({ ...prev, type: e.target.value }))}
+                >
+                  <option value="DISTRIBUTOR">DISTRIBUTOR</option>
+                  <option value="DEALER">DEALER</option>
+                  <option value="RETAILER">RETAILER</option>
                 </select>
               </div>
 
-              <div style={styles.modalFooter}>
-                <button type="button" onClick={() => setShowCustomerModal(false)} style={styles.cancelBtn} disabled={submitting}>Cancel</button>
-                <button type="submit" style={styles.submitBtn} disabled={submitting}>
-                  {submitting ? <><Loader2 size={14} style={styles.spinner} /> Saving...</> : editingCustomer ? 'Save Changes' : 'Add Customer'}
-                </button>
+              <div className="form-group">
+                <label className="form-label">Phone</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="+91 98765 43210"
+                  value={customerForm.phone}
+                  onChange={e => setCustomerForm(prev => ({ ...prev, phone: e.target.value }))}
+                />
               </div>
-            </form>
-          </div>
-        </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <input
+                  className="form-input"
+                  type="email"
+                  placeholder="accounts@kaveriagro.com"
+                  value={customerForm.email}
+                  onChange={e => setCustomerForm(prev => ({ ...prev, email: e.target.value }))}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Status</label>
+                <select
+                  className="form-select"
+                  value={customerForm.status}
+                  onChange={e => setCustomerForm(prev => ({ ...prev, status: e.target.value }))}
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Registered Office / Warehouse Address</label>
+              <textarea
+                className="form-textarea"
+                rows={2}
+                placeholder="Plot 45, APMC Market Yard, Hubli..."
+                value={customerForm.address}
+                onChange={e => setCustomerForm(prev => ({ ...prev, address: e.target.value }))}
+              />
+            </div>
+
+            {!editingCustomer && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', padding: '12px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)' }}>
+                <div className="form-group">
+                  <label className="form-label">Initial Credit Limit (₹)</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="0"
+                    placeholder="500000"
+                    value={customerForm.creditLimit}
+                    onChange={e => setCustomerForm(prev => ({ ...prev, creditLimit: e.target.value }))}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Payment Terms (Days)</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="0"
+                    placeholder="30"
+                    value={customerForm.paymentTermsDays}
+                    onChange={e => setCustomerForm(prev => ({ ...prev, paymentTermsDays: e.target.value }))}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+              <button type="button" onClick={() => setShowCustomerModal(false)} className="btn btn-secondary">
+                Cancel
+              </button>
+              <button type="submit" disabled={submitting} className="btn btn-primary">
+                {submitting ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={15} />}
+                {editingCustomer ? 'Update Profile' : 'Create Account'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
-      {/* ══ ADJUST CREDIT MODAL ═════════════════════════════════════════════════ */}
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADJUST CREDIT LIMIT
+          ───────────────────────────────────────────────────────────── */}
       {showCreditModal && creditTarget && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modalCard}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Adjust Credit Limit</h3>
-              <button onClick={() => setShowCreditModal(false)} style={styles.closeBtn}><X size={18} /></button>
+        <Modal
+          title={`Adjust Credit Limit: ${creditTarget.name}`}
+          onClose={() => setShowCreditModal(false)}
+        >
+          <form onSubmit={handleCreditSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ padding: '12px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '12px' }}>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Current Limit:</span> <strong>₹{creditTarget.credit?.creditLimit?.toLocaleString('en-IN') || 0}</strong></div>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Outstanding:</span> <strong style={{ color: 'var(--status-warning)' }}>₹{creditTarget.credit?.outstandingAmount?.toLocaleString('en-IN') || 0}</strong></div>
             </div>
 
-            {/* Customer info panel */}
-            <div style={{ backgroundColor: '#0f172a', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem', border: '1px solid #1e293b' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Customer</div>
-              <div style={{ fontWeight: 700, color: '#f8fafc', fontSize: '0.9375rem' }}>{creditTarget.name}</div>
-              <div style={{ marginTop: '0.5rem', display: 'flex', gap: '1.5rem', fontSize: '0.8125rem' }}>
-                <span>Current Limit: <strong style={{ color: '#6366f1' }}>₹{(creditTarget.credit?.creditLimit ?? 0).toLocaleString('en-IN')}</strong></span>
-                <span>Outstanding: <strong style={{ color: '#f59e0b' }}>₹{(creditTarget.credit?.outstandingAmount ?? 0).toLocaleString('en-IN')}</strong></span>
-                <span>Available: <strong style={{ color: '#10b981' }}>₹{(creditTarget.credit?.availableCredit ?? 0).toLocaleString('en-IN')}</strong></span>
+            <div className="form-group">
+              <label className="form-label">New Credit Limit (₹) <span className="required">*</span></label>
+              <input
+                className="form-input"
+                type="number"
+                min={creditTarget.credit?.outstandingAmount || 0}
+                step="1000"
+                value={creditForm.creditLimit}
+                onChange={e => setCreditForm(prev => ({ ...prev, creditLimit: e.target.value }))}
+                required
+              />
+              <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                Rule: Cannot be lower than current outstanding balance (₹{creditTarget.credit?.outstandingAmount?.toLocaleString('en-IN') || 0}).
+              </span>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Payment Terms (Days Net)</label>
+              <input
+                className="form-input"
+                type="number"
+                min="0"
+                value={creditForm.paymentTermsDays}
+                onChange={e => setCreditForm(prev => ({ ...prev, paymentTermsDays: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+              <button type="button" onClick={() => setShowCreditModal(false)} className="btn btn-secondary">
+                Cancel
+              </button>
+              <button type="submit" disabled={submitting} className="btn btn-primary">
+                {submitting ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={15} />}
+                Save Credit Terms
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: IN-CONTEXT PAYMENT RECORDING
+          ───────────────────────────────────────────────────────────── */}
+      {paymentModalInvoice && (
+        <Modal
+          title={`Record Payment for Invoice ${paymentModalInvoice.invoiceNumber}`}
+          onClose={() => setPaymentModalInvoice(null)}
+          maxWidth="640px"
+        >
+          <form onSubmit={handlePaymentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Invoice summary strip */}
+            <div style={{ padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 'var(--radius-md)', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+              <div>
+                <span className="context-kpi-label">Invoice Total</span>
+                <span className="context-kpi-val" style={{ fontSize: '14px' }}>₹{paymentModalInvoice.totalAmount.toLocaleString('en-IN')}</span>
+              </div>
+              <div>
+                <span className="context-kpi-label">Already Paid</span>
+                <span className="context-kpi-val" style={{ fontSize: '14px', color: 'var(--status-success)' }}>₹{paymentModalInvoice.amountPaid.toLocaleString('en-IN')}</span>
+              </div>
+              <div>
+                <span className="context-kpi-label">Outstanding</span>
+                <span className="context-kpi-val" style={{ fontSize: '14px', color: 'var(--status-danger)' }}>₹{paymentModalInvoice.outstandingAmount.toLocaleString('en-IN')}</span>
               </div>
             </div>
 
-            <form onSubmit={handleCreditSubmit} style={styles.form}>
-              <div style={styles.formRow}>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>New Credit Limit (₹) <span style={{ color: '#ef4444' }}>*</span></label>
-                  <input type="number" min="0" step="1000" style={styles.input}
-                    value={creditForm.creditLimit} onChange={(e) => setCreditForm((p) => ({ ...p, creditLimit: e.target.value }))} required />
-                </div>
-                <div style={{ ...styles.formGroup, flex: 1 }}>
-                  <label style={styles.label}>Payment Terms (Days)</label>
-                  <input type="number" min="0" max="365" style={styles.input}
-                    value={creditForm.paymentTermsDays} onChange={(e) => setCreditForm((p) => ({ ...p, paymentTermsDays: e.target.value }))} />
-                </div>
+            <div className="form-group">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="form-label">Payment Amount (₹) <span className="required">*</span></label>
+                <button
+                  type="button"
+                  onClick={() => setPaymentForm(prev => ({ ...prev, amount: String(paymentModalInvoice.outstandingAmount) }))}
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontSize: '11px', padding: '2px 8px' }}
+                >
+                  Pay Full Balance (₹{paymentModalInvoice.outstandingAmount.toLocaleString('en-IN')})
+                </button>
               </div>
+              <input
+                className="form-input"
+                type="number"
+                min="0.01"
+                step="0.01"
+                max={paymentModalInvoice.outstandingAmount}
+                value={paymentForm.amount}
+                onChange={e => setPaymentForm(prev => ({ ...prev, amount: e.target.value }))}
+                required
+                style={{ fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 700 }}
+              />
+            </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Credit Status</label>
-                <select style={styles.select} value={creditForm.status} onChange={(e) => setCreditForm((p) => ({ ...p, status: e.target.value }))}>
-                  <option value="ACTIVE">Active</option>
-                  <option value="SUSPENDED">Suspended</option>
-                  <option value="OVER_LIMIT">Over Limit</option>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-group">
+                <label className="form-label">Payment Method</label>
+                <select
+                  className="form-select"
+                  value={paymentForm.paymentMethod}
+                  onChange={e => setPaymentForm(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                >
+                  <option value="BANK_TRANSFER">Bank Transfer (NEFT/RTGS)</option>
+                  <option value="CHEQUE">Cheque / Demand Draft</option>
+                  <option value="CASH">Cash</option>
+                  <option value="UPI">UPI / Digital</option>
                 </select>
               </div>
 
-              <div style={styles.modalFooter}>
-                <button type="button" onClick={() => setShowCreditModal(false)} style={styles.cancelBtn} disabled={submitting}>Cancel</button>
-                <button type="submit" style={{ ...styles.submitBtn, backgroundColor: '#6366f1' }} disabled={submitting}>
-                  {submitting ? <><Loader2 size={14} style={styles.spinner} /> Updating...</> : 'Update Credit Limit'}
-                </button>
+              <div className="form-group">
+                <label className="form-label">Reference / UTR / Cheque #</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="e.g. UTR84729103"
+                  value={paymentForm.referenceNumber}
+                  onChange={e => setPaymentForm(prev => ({ ...prev, referenceNumber: e.target.value }))}
+                />
               </div>
-            </form>
-          </div>
-        </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Notes & Remarks</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Optional payment notes..."
+                value={paymentForm.notes}
+                onChange={e => setPaymentForm(prev => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+
+            {/* Credit restoration preview */}
+            {parseFloat(paymentForm.amount) > 0 && (
+              <div style={{ padding: '10px 14px', background: 'var(--status-success-bg)', border: '1px solid var(--status-success-border)', borderRadius: 'var(--radius-md)', fontSize: '12px', color: 'var(--status-success)' }}>
+                ✓ Recording this payment restores <strong>₹{parseFloat(paymentForm.amount).toLocaleString('en-IN')}</strong> back to customer available credit!
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+              <button type="button" onClick={() => setPaymentModalInvoice(null)} className="btn btn-secondary">
+                Cancel
+              </button>
+              <button type="submit" disabled={paymentSubmitting} className="btn btn-primary">
+                {paymentSubmitting ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Landmark size={15} />}
+                Confirm Payment Receipt
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const styles = {
-  container:   { display: 'flex', flexDirection: 'column', gap: '1.5rem' },
-  header:      { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' },
-  title:       { fontSize: '1.375rem', fontWeight: 800, color: '#f8fafc' },
-  subtitle:    { fontSize: '0.875rem', color: '#94a3b8', marginTop: '0.25rem' },
-  addBtn: {
-    display: 'flex', alignItems: 'center', gap: '0.5rem',
-    backgroundColor: '#059669', color: '#fff', border: 'none',
-    borderRadius: '8px', padding: '0.625rem 1rem', fontSize: '0.8125rem',
-    fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s ease',
+// ─── Modal Styles ─────────────────────────────────────────────────────
+const ms = {
+  overlay: {
+    position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)',
+    backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', zIndex: 1000, padding: '1rem',
   },
-  tabsContainer: { display: 'flex', borderBottom: '1px solid #1e293b', gap: '1.5rem' },
-  tab: {
-    background: 'none', border: 'none', padding: '0.75rem 0.5rem',
-    fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s ease',
+  modal: {
+    backgroundColor: 'var(--surface-1)', border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-lg)', width: '100%', maxHeight: '90vh',
+    display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-xl)',
   },
-  table:     { width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' },
-  theadRow:  { backgroundColor: '#0f172a', borderBottom: '1px solid #1e293b' },
-  th:        { padding: '1rem 1.25rem', fontWeight: 700, color: '#94a3b8' },
-  tr:        { borderBottom: '1px solid #1e293b', backgroundColor: 'rgba(30, 41, 59, 0.2)' },
-  td:        { padding: '0.875rem 1.25rem', color: '#cbd5e1' },
-  cardHeader: {
-    display: 'flex', alignItems: 'center', gap: '0.5rem',
-    padding: '1.25rem 1.5rem', borderBottom: '1px solid #1e293b', backgroundColor: '#0f172a',
+  header: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)',
   },
-  cardTitle:  { fontSize: '1rem', fontWeight: 700, color: '#f8fafc' },
-  kpiGrid:    { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' },
-  kpiCard:    { backgroundColor: '#1e293b', borderRadius: '12px', padding: '1.25rem', border: '1px solid #1e293b' },
-  kpiIcon:    { padding: '0.5rem', borderRadius: '8px', display: 'inline-flex', alignItems: 'center' },
-  kpiLabel:   { fontSize: '0.8125rem', fontWeight: 700, color: '#94a3b8' },
-  kpiValue:   { fontSize: '1.875rem', fontWeight: 800, lineHeight: 1, marginTop: '0.25rem' },
-  kpiSub:     { fontSize: '0.75rem', color: '#64748b', marginTop: '0.375rem' },
-  editBtn: {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    width: '28px', height: '28px', borderRadius: '6px',
-    backgroundColor: 'rgba(59,130,246,0.1)', color: '#3b82f6',
-    border: '1px solid rgba(59,130,246,0.2)', cursor: 'pointer', transition: 'all 0.2s',
-  },
-  deleteBtn: {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    width: '28px', height: '28px', borderRadius: '6px',
-    backgroundColor: 'rgba(239,68,68,0.1)', color: '#ef4444',
-    border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', transition: 'all 0.2s',
-  },
-  creditBtn: {
-    display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
-    backgroundColor: 'rgba(245,158,11,0.1)', color: '#f59e0b',
-    border: '1px solid rgba(245,158,11,0.2)', padding: '0.375rem 0.625rem',
-    borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
-    transition: 'all 0.2s',
-  },
-  loadingState: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '4rem 0' },
-  spinner:      { animation: 'spin 1s linear infinite', color: '#10b981' },
-  emptyState:   { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '3rem', textAlign: 'center' },
-  modalOverlay: {
-    position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-    backgroundColor: 'rgba(11,15,23,0.75)', backdropFilter: 'blur(8px)',
-    zIndex: 999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1.5rem',
-  },
-  modalCard: {
-    backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '16px',
-    width: '100%', maxWidth: '600px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-    padding: '1.5rem', maxHeight: '90vh', overflowY: 'auto',
-  },
-  modalHeader: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    borderBottom: '1px solid #334155', paddingBottom: '1rem', marginBottom: '1.25rem',
-  },
-  modalTitle: { fontSize: '1.125rem', fontWeight: 800, color: '#f8fafc' },
+  title: { margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' },
   closeBtn: {
-    background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', padding: '0.25rem', borderRadius: '6px',
+    background: 'none', border: 'none', color: 'var(--text-tertiary)',
+    cursor: 'pointer', padding: '4px', borderRadius: '4px',
   },
-  form:      { display: 'flex', flexDirection: 'column', gap: '1.25rem' },
-  formRow:   { display: 'flex', gap: '1rem' },
-  formGroup: { display: 'flex', flexDirection: 'column', gap: '0.375rem' },
-  label:     { fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8' },
-  input: {
-    padding: '0.625rem 0.875rem', backgroundColor: '#0f172a',
-    border: '1px solid #334155', borderRadius: '8px', color: '#f8fafc',
-    fontSize: '0.875rem', outline: 'none', width: '100%', boxSizing: 'border-box',
-  },
-  select: {
-    backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px',
-    padding: '0.625rem 0.875rem', color: '#cbd5e1', fontSize: '0.8125rem',
-    outline: 'none', cursor: 'pointer', width: '100%',
-  },
-  modalFooter: {
-    display: 'flex', justifyContent: 'flex-end', gap: '0.75rem',
-    borderTop: '1px solid #334155', paddingTop: '1.25rem', marginTop: '0.5rem',
-  },
-  cancelBtn: {
-    backgroundColor: 'transparent', border: '1px solid #334155', color: '#cbd5e1',
-    borderRadius: '8px', padding: '0.625rem 1rem', fontSize: '0.8125rem',
-    fontWeight: 700, cursor: 'pointer',
-  },
-  submitBtn: {
-    display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
-    backgroundColor: '#059669', border: 'none', color: '#fff',
-    borderRadius: '8px', padding: '0.625rem 1.25rem', fontSize: '0.8125rem',
-    fontWeight: 700, cursor: 'pointer',
-  },
+  body: { padding: '20px', overflowY: 'auto' },
 };
