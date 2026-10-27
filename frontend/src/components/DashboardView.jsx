@@ -18,7 +18,9 @@ import {
   PlusCircle,
   FileSpreadsheet,
   Receipt,
-  Scale
+  Scale,
+  CloudRain,
+  Zap
 } from 'lucide-react';
 import { apiGet } from '../utils/api';
 
@@ -35,18 +37,23 @@ export default function DashboardView() {
   });
   
   const [alerts, setAlerts] = useState([]);
+  const [forecastSummary, setForecastSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
   const fetchDashboardData = async (showFeedback = false) => {
     setLoading(true);
     try {
-      const [kpiRes, alertsRes] = await Promise.all([
+      const [kpiRes, alertsRes, forecastRes] = await Promise.all([
         apiGet('/dashboard/kpis'),
-        apiGet('/dashboard/alerts')
+        apiGet('/dashboard/alerts'),
+        apiGet('/forecast').catch(() => ({ success: false }))
       ]);
       setKpis(kpiRes.data || {});
       setAlerts(alertsRes.data || []);
+      if (forecastRes.success && forecastRes.data) {
+        setForecastSummary(forecastRes.data);
+      }
       setLastRefreshed(new Date());
       if (showFeedback) {
         showToast('Dashboard metrics refreshed with live production data.', 'success');
@@ -122,6 +129,45 @@ export default function DashboardView() {
           </button>
         </div>
       </div>
+
+      {/* AgriForecast AI Intelligence Strip */}
+      {forecastSummary && (
+        <div className="card" style={{ padding: '16px 20px', marginBottom: '20px', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%)', border: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'var(--brand-500)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <TrendingUp size={22} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                <span className="badge badge-primary" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  <Sparkles size={11} /> AI SOWING RADAR
+                </span>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {forecastSummary.scenario?.season?.name || 'Active Sowing Cycle'}
+                </span>
+              </div>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+                Projected 30-day sowing demand is <strong>{(forecastSummary.summary?.projected30dDemand || 0).toLocaleString()} units</strong> ({forecastSummary.summary?.projectedSurgeRatio}x surge).
+                {forecastSummary.summary?.imminentStockoutsCount > 0 && (
+                  <span style={{ color: 'var(--status-danger)', fontWeight: 600, marginLeft: '6px' }}>
+                    ⚠️ {forecastSummary.summary.imminentStockoutsCount} SKUs below dynamic ROP!
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <a 
+              href="#forecast" 
+              className="btn btn-primary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', padding: '8px 16px' }}
+            >
+              Open AgriForecast Studio <ChevronRight size={15} />
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* KPI Cards Grid */}
       <div style={styles.kpiGrid}>
@@ -289,6 +335,19 @@ export default function DashboardView() {
                 <div>
                   <div style={styles.actionTitle}>Executive Reports</div>
                   <div style={styles.actionDesc}>Download analytical CSV audits</div>
+                </div>
+              </div>
+              <ChevronRight size={16} color="var(--text-tertiary)" />
+            </a>
+
+            <a href="#forecast" className="card card-hover" style={styles.actionTile}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ ...styles.actionIconBox, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+                  <TrendingUp size={20} />
+                </div>
+                <div>
+                  <div style={styles.actionTitle}>AgriForecast AI Studio</div>
+                  <div style={styles.actionDesc}>Sowing waves & dynamic buffer ROP</div>
                 </div>
               </div>
               <ChevronRight size={16} color="var(--text-tertiary)" />

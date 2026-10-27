@@ -13,6 +13,7 @@ import SalesOrdersView from './components/SalesOrdersView';
 import InvoicesView from './components/InvoicesView';
 import ReportsView from './components/ReportsView';
 import UsersView from './components/UsersView';
+import AgriForecastView from './components/AgriForecastView';
 
 import { 
   Sprout, 
@@ -24,6 +25,7 @@ import {
   ShoppingCart, 
   Receipt, 
   BarChart3, 
+  TrendingUp, 
   ShieldCheck, 
   Activity,
   LogOut,
@@ -134,8 +136,9 @@ export default function App() {
       ]
     },
     {
-      title: 'Intelligence & Admin',
+      title: 'AI & Intelligence',
       items: [
+        { id: 'forecast', label: 'AgriForecast AI', icon: <TrendingUp size={18} />, permission: 'dashboard.view' },
         { id: 'reports', label: 'Analytics & Reports', icon: <BarChart3 size={18} />, permission: 'dashboard.view' },
         { id: 'users', label: 'User Management', icon: <UserCog size={18} />, permission: 'users.manage' }
       ]
@@ -190,6 +193,8 @@ export default function App() {
         return <SalesOrdersView />;
       case 'invoices':
         return <InvoicesView />;
+      case 'forecast':
+        return <AgriForecastView />;
       case 'reports':
         return <ReportsView />;
       case 'users':
