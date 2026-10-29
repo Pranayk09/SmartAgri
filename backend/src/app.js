@@ -10,7 +10,7 @@ import salesOrderRoutes from './routes/salesOrderRoutes.js';
 import invoiceRoutes from './routes/invoiceRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import userRoutes from './routes/userRoutes.js';
-import agriForecastRoutes from './routes/agriForecastRoutes.js';
+import aiCopilotRoutes from './routes/aiCopilotRoutes.js';
 
 dotenv.config();
 
@@ -57,8 +57,8 @@ app.use('/api/dashboard', dashboardRoutes);
 // User Management Routes (OWNER only via users.manage permission)
 app.use('/api/users', userRoutes);
 
-// AgriForecast AI: Sowing-Window Demand & Buffer Stocking
-app.use('/api/forecast', agriForecastRoutes);
+// AI Operations Copilot: LLM-Powered Inventory & Sales Intelligence
+app.use('/api/ai', aiCopilotRoutes);
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {
